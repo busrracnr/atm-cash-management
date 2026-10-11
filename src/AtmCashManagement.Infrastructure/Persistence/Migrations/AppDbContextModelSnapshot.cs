@@ -59,6 +59,210 @@ namespace AtmCashManagement.Infrastructure.Persistence.Migrations
 
                     b.ToTable("atms", (string)null);
                 });
+
+            modelBuilder.Entity("AtmCashManagement.Domain.Atms.Cassette", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("AtmId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("atm_id");
+
+                    b.Property<string>("Currency")
+                        .HasMaxLength(3)
+                        .HasColumnType("character varying(3)")
+                        .HasColumnName("currency");
+
+                    b.Property<int?>("Denomination")
+                        .HasColumnType("integer")
+                        .HasColumnName("denomination");
+
+                    b.Property<int>("Slot")
+                        .HasColumnType("integer")
+                        .HasColumnName("slot");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("type");
+
+                    b.HasKey("Id")
+                        .HasName("pk_cassettes");
+
+                    b.HasIndex("AtmId", "Slot")
+                        .IsUnique()
+                        .HasDatabaseName("ix_cassettes_atm_id_slot");
+
+                    b.ToTable("cassettes", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_cassettes_definition", "(type = 'Deposit' AND currency IS NULL AND denomination IS NULL) OR (type = 'Recycling' AND currency IS NOT NULL AND denomination IN (20, 50, 100, 500))");
+
+                            t.HasCheckConstraint("ck_cassettes_slot", "slot BETWEEN 1 AND 5");
+                        });
+                });
+
+            modelBuilder.Entity("AtmCashManagement.Domain.Atms.CassetteBalance", b =>
+                {
+                    b.Property<Guid>("CassetteId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("cassette_id");
+
+                    b.Property<string>("Currency")
+                        .HasMaxLength(3)
+                        .HasColumnType("character varying(3)")
+                        .HasColumnName("currency");
+
+                    b.Property<int>("Denomination")
+                        .HasColumnType("integer")
+                        .HasColumnName("denomination");
+
+                    b.Property<int>("NoteCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("note_count");
+
+                    b.Property<int>("ReservedCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("reserved_count");
+
+                    b.HasKey("CassetteId", "Currency", "Denomination")
+                        .HasName("pk_cassette_balances");
+
+                    b.ToTable("cassette_balances", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_cassette_balances_note_count", "note_count BETWEEN 0 AND 100");
+
+                            t.HasCheckConstraint("ck_cassette_balances_reserved_count", "reserved_count BETWEEN 0 AND note_count");
+                        });
+                });
+
+            modelBuilder.Entity("AtmCashManagement.Domain.Ledger.CassetteMovement", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("AtmId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("atm_id");
+
+                    b.Property<Guid>("CassetteId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("cassette_id");
+
+                    b.Property<int>("CassetteSlot")
+                        .HasColumnType("integer")
+                        .HasColumnName("cassette_slot");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("character varying(3)")
+                        .HasColumnName("currency");
+
+                    b.Property<int>("Denomination")
+                        .HasColumnType("integer")
+                        .HasColumnName("denomination");
+
+                    b.Property<int>("NoteCountDelta")
+                        .HasColumnType("integer")
+                        .HasColumnName("note_count_delta");
+
+                    b.Property<DateTimeOffset>("OccurredAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("occurred_at");
+
+                    b.Property<string>("PerformedBy")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("performed_by");
+
+                    b.Property<Guid?>("ReferenceId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("reference_id");
+
+                    b.Property<int>("ReservedCountDelta")
+                        .HasColumnType("integer")
+                        .HasColumnName("reserved_count_delta");
+
+                    b.Property<long>("Sequence")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("sequence");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityAlwaysColumn(b.Property<long>("Sequence"));
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("type");
+
+                    b.HasKey("Id")
+                        .HasName("pk_cassette_movements");
+
+                    b.HasIndex("CassetteId")
+                        .HasDatabaseName("ix_cassette_movements_cassette_id");
+
+                    b.HasIndex("Sequence")
+                        .IsUnique()
+                        .HasDatabaseName("ix_cassette_movements_sequence");
+
+                    b.HasIndex("AtmId", "Sequence")
+                        .HasDatabaseName("ix_cassette_movements_atm_id_sequence");
+
+                    b.ToTable("cassette_movements", (string)null);
+                });
+
+            modelBuilder.Entity("AtmCashManagement.Domain.Atms.Cassette", b =>
+                {
+                    b.HasOne("AtmCashManagement.Domain.Atms.Atm", null)
+                        .WithMany("Cassettes")
+                        .HasForeignKey("AtmId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_cassettes_atms_atm_id");
+                });
+
+            modelBuilder.Entity("AtmCashManagement.Domain.Atms.CassetteBalance", b =>
+                {
+                    b.HasOne("AtmCashManagement.Domain.Atms.Cassette", null)
+                        .WithMany("Balances")
+                        .HasForeignKey("CassetteId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_cassette_balances_cassettes_cassette_id");
+                });
+
+            modelBuilder.Entity("AtmCashManagement.Domain.Ledger.CassetteMovement", b =>
+                {
+                    b.HasOne("AtmCashManagement.Domain.Atms.Atm", null)
+                        .WithMany()
+                        .HasForeignKey("AtmId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_cassette_movements_atms_atm_id");
+
+                    b.HasOne("AtmCashManagement.Domain.Atms.Cassette", null)
+                        .WithMany()
+                        .HasForeignKey("CassetteId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_cassette_movements_cassettes_cassette_id");
+                });
+
+            modelBuilder.Entity("AtmCashManagement.Domain.Atms.Atm", b =>
+                {
+                    b.Navigation("Cassettes");
+                });
+
+            modelBuilder.Entity("AtmCashManagement.Domain.Atms.Cassette", b =>
+                {
+                    b.Navigation("Balances");
+                });
 #pragma warning restore 612, 618
         }
     }

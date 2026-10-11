@@ -22,6 +22,8 @@ public static class DependencyInjection
             options.UseNpgsql(connectionString).UseSnakeCaseNamingConvention();
         });
         services.AddScoped<IAppDbContext>(serviceProvider => serviceProvider.GetRequiredService<AppDbContext>());
+        services.AddScoped<IUnitOfWork, EfUnitOfWork>();
+        services.AddScoped<IAtmRepository, AtmRepository>();
 
         services.AddSingleton(TimeProvider.System);
 

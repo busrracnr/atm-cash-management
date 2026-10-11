@@ -1,0 +1,335 @@
+{
+  "info": {
+    "name": "ATM Cash Management",
+    "description": "End-to-end scenario, run in order (Collection Runner or newman):\ncreate ATM → configure cassettes → load cash → put in service → request quote → confirm → deposit → switch to maintenance → reconcile → report.\n\nRequires the API from `docker compose up` (baseUrl defaults to http://localhost:8088). Each request asserts its expected result.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8088" },
+    { "key": "user", "value": "ops.alice" },
+    { "key": "atmId", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "00 Health check",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('API and database are healthy', () => {",
+              "  pm.response.to.have.status(200);",
+              "  pm.expect(pm.response.json().status).to.eql('Healthy');",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/health"
+      }
+    },
+    {
+      "name": "01 Create ATM",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('ATM is created as UNCONFIGURED', () => {",
+              "  pm.response.to.have.status(201);",
+              "  const atm = pm.response.json();",
+              "  pm.expect(atm.status).to.eql('UNCONFIGURED');",
+              "  pm.collectionVariables.set('atmId', atm.id);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "X-User", "value": "{{user}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"code\": \"ATM-{{$timestamp}}\",\n  \"location\": \"Kadıköy, İstanbul\"\n}"
+        },
+        "url": "{{baseUrl}}/api/atms"
+      }
+    },
+    {
+      "name": "02 Configure cassettes",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Five cassettes are configured', () => {",
+              "  pm.response.to.have.status(200);",
+              "  const atm = pm.response.json();",
+              "  pm.expect(atm.status).to.eql('CONFIGURED');",
+              "  pm.expect(atm.cassettes).to.have.lengthOf(5);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "X-User", "value": "{{user}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"cassettes\": [\n    { \"slot\": 1, \"type\": \"DEPOSIT\" },\n    { \"slot\": 2, \"type\": \"RECYCLING\", \"currency\": \"TRY\", \"denomination\": 100 },\n    { \"slot\": 3, \"type\": \"RECYCLING\", \"currency\": \"TRY\", \"denomination\": 50 },\n    { \"slot\": 4, \"type\": \"RECYCLING\", \"currency\": \"TRY\", \"denomination\": 20 },\n    { \"slot\": 5, \"type\": \"RECYCLING\", \"currency\": \"USD\", \"denomination\": 100 }\n  ]\n}"
+        },
+        "url": "{{baseUrl}}/api/atms/{{atmId}}/cassettes"
+      }
+    },
+    {
+      "name": "03 Load cash",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Cash is recorded and the ATM is LOADED', () => {",
+              "  pm.response.to.have.status(200);",
+              "  const atm = pm.response.json();",
+              "  pm.expect(atm.status).to.eql('LOADED');",
+              "  pm.expect(atm.cassettes.find(c => c.slot === 2).noteCount).to.eql(50);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "X-User", "value": "{{user}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"items\": [\n    { \"slot\": 2, \"count\": 50 },\n    { \"slot\": 3, \"count\": 40 },\n    { \"slot\": 4, \"count\": 30 },\n    { \"slot\": 5, \"count\": 20 }\n  ]\n}"
+        },
+        "url": "{{baseUrl}}/api/atms/{{atmId}}/cash-loads"
+      }
+    },
+    {
+      "name": "04 Put in service",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('ATM is IN_SERVICE', () => {",
+              "  pm.response.to.have.status(200);",
+              "  pm.expect(pm.response.json().status).to.eql('IN_SERVICE');",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "X-User", "value": "{{user}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"status\": \"IN_SERVICE\"\n}"
+        },
+        "url": "{{baseUrl}}/api/atms/{{atmId}}/status"
+      }
+    },
+    {
+      "name": "08 Switch to maintenance",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('ATM is in MAINTENANCE', () => {",
+              "  pm.response.to.have.status(200);",
+              "  pm.expect(pm.response.json().status).to.eql('MAINTENANCE');",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "X-User", "value": "{{user}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"status\": \"MAINTENANCE\"\n}"
+        },
+        "url": "{{baseUrl}}/api/atms/{{atmId}}/status"
+      }
+    },
+    {
+      "name": "10 Report: ATM balance",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Balance shows notes per denomination and totals per currency', () => {",
+              "  pm.response.to.have.status(200);",
+              "  const balance = pm.response.json();",
+              "  pm.expect(balance.totals.find(t => t.currency === 'TRY').amount).to.eql(7600);",
+              "  pm.expect(balance.totals.find(t => t.currency === 'USD').amount).to.eql(2000);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/api/atms/{{atmId}}/balance"
+      }
+    },
+    {
+      "name": "11 Ledger: movements",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Every load is in the ledger', () => {",
+              "  pm.response.to.have.status(200);",
+              "  const loads = pm.response.json().filter(m => m.type === 'LOAD');",
+              "  pm.expect(loads).to.have.lengthOf(4);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/api/atms/{{atmId}}/movements"
+      }
+    },
+    {
+      "name": "12 Ledger: consistency check",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Stored balances match the ledger', () => {",
+              "  pm.response.to.have.status(200);",
+              "  pm.expect(pm.response.json().isConsistent).to.eql(true);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/api/ledger/consistency?atmId={{atmId}}"
+      }
+    },
+    {
+      "name": "Error examples",
+      "item": [
+        {
+          "name": "Invalid state transition (MAINTENANCE → LOADED)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Rejected with INVALID_STATE_TRANSITION', () => {",
+                  "  pm.response.to.have.status(409);",
+                  "  pm.expect(pm.response.json().errorCode).to.eql('INVALID_STATE_TRANSITION');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"LOADED\"\n}"
+            },
+            "url": "{{baseUrl}}/api/atms/{{atmId}}/status"
+          }
+        },
+        {
+          "name": "Cash cannot be loaded into the deposit cassette",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Rejected with CASSETTE_NOT_LOADABLE', () => {",
+                  "  pm.response.to.have.status(422);",
+                  "  pm.expect(pm.response.json().errorCode).to.eql('CASSETTE_NOT_LOADABLE');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"items\": [ { \"slot\": 1, \"count\": 10 } ]\n}"
+            },
+            "url": "{{baseUrl}}/api/atms/{{atmId}}/cash-loads"
+          }
+        },
+        {
+          "name": "Configuration without a foreign currency cassette",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Rejected with FOREIGN_CURRENCY_CASSETTE_COUNT_INVALID', () => {",
+                  "  pm.response.to.have.status(422);",
+                  "  pm.expect(pm.response.json().errorCode).to.eql('FOREIGN_CURRENCY_CASSETTE_COUNT_INVALID');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cassettes\": [\n    { \"slot\": 1, \"type\": \"DEPOSIT\" },\n    { \"slot\": 2, \"type\": \"RECYCLING\", \"currency\": \"TRY\", \"denomination\": 100 },\n    { \"slot\": 3, \"type\": \"RECYCLING\", \"currency\": \"TRY\", \"denomination\": 50 },\n    { \"slot\": 4, \"type\": \"RECYCLING\", \"currency\": \"TRY\", \"denomination\": 20 },\n    { \"slot\": 5, \"type\": \"RECYCLING\", \"currency\": \"TRY\", \"denomination\": 500 }\n  ]\n}"
+            },
+            "url": "{{baseUrl}}/api/atms/{{atmId}}/cassettes"
+          }
+        }
+      ]
+    }
+  ]
+}

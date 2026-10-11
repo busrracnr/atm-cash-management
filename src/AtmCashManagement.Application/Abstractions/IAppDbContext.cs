@@ -1,4 +1,5 @@
 using AtmCashManagement.Domain.Atms;
+using AtmCashManagement.Domain.Ledger;
 
 using Microsoft.EntityFrameworkCore;
 
@@ -8,6 +9,12 @@ namespace AtmCashManagement.Application.Abstractions;
 public interface IAppDbContext
 {
     DbSet<Atm> Atms { get; }
+
+    DbSet<Cassette> Cassettes { get; }
+
+    DbSet<CassetteBalance> CassetteBalances { get; }
+
+    DbSet<CassetteMovement> CassetteMovements { get; }
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }

@@ -1,8 +1,10 @@
 using System.Net;
 using System.Net.Http.Json;
-using System.Text.Json;
 
 using AtmCashManagement.IntegrationTests.Infrastructure;
+using AtmCashManagement.IntegrationTests.Support;
+
+using static AtmCashManagement.IntegrationTests.Support.AtmApi;
 
 namespace AtmCashManagement.IntegrationTests;
 
@@ -10,8 +12,6 @@ namespace AtmCashManagement.IntegrationTests;
 public sealed class AtmEndpointsTests(ApiFactory factory)
 {
     private readonly HttpClient _client = factory.CreateClient();
-
-    private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     [Fact]
     public async Task Created_atm_is_persisted_in_unconfigured_state()
@@ -21,9 +21,10 @@ public sealed class AtmEndpointsTests(ApiFactory factory)
         var createResponse = await _client.PostAsJsonAsync("/api/atms", new { code, location = "Kadıköy, İstanbul" }, Ct);
 
         Assert.Equal(HttpStatusCode.Created, createResponse.StatusCode);
-        var atm = await _client.GetFromJsonAsync<JsonElement>(createResponse.Headers.Location, Ct);
+        var atm = await _client.GetJsonAsync(createResponse.Headers.Location!.ToString());
         Assert.Equal(code.ToUpperInvariant(), atm.GetProperty("code").GetString());
         Assert.Equal("UNCONFIGURED", atm.GetProperty("status").GetString());
+        Assert.Equal(0, atm.GetProperty("cassettes").GetArrayLength());
     }
 
     [Fact]
@@ -34,7 +35,7 @@ public sealed class AtmEndpointsTests(ApiFactory factory)
 
         var response = await _client.PostAsJsonAsync("/api/atms", request, Ct);
 
-        await AssertProblemAsync(response, HttpStatusCode.Conflict, "ATM_CODE_ALREADY_EXISTS");
+        await response.AssertProblemAsync(HttpStatusCode.Conflict, "ATM_CODE_ALREADY_EXISTS");
     }
 
     [Fact]
@@ -42,7 +43,7 @@ public sealed class AtmEndpointsTests(ApiFactory factory)
     {
         var response = await _client.GetAsync($"/api/atms/{Guid.NewGuid()}", Ct);
 
-        await AssertProblemAsync(response, HttpStatusCode.NotFound, "ATM_NOT_FOUND");
+        await response.AssertProblemAsync(HttpStatusCode.NotFound, "ATM_NOT_FOUND");
     }
 
     [Fact]
@@ -50,19 +51,6 @@ public sealed class AtmEndpointsTests(ApiFactory factory)
     {
         var response = await _client.PostAsJsonAsync("/api/atms", new { code = "" }, Ct);
 
-        await AssertProblemAsync(response, HttpStatusCode.BadRequest, "VALIDATION_FAILED");
-    }
-
-    private static string UniqueCode() => $"IT-{Guid.NewGuid():N}"[..16];
-
-    private static async Task AssertProblemAsync(HttpResponseMessage response, HttpStatusCode expectedStatus, string expectedErrorCode)
-    {
-        Assert.Equal(expectedStatus, response.StatusCode);
-        Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
-
-        var problem = await response.Content.ReadFromJsonAsync<JsonElement>(Ct);
-        Assert.Equal((int)expectedStatus, problem.GetProperty("status").GetInt32());
-        Assert.Equal(expectedErrorCode, problem.GetProperty("errorCode").GetString());
-        Assert.False(string.IsNullOrEmpty(problem.GetProperty("traceId").GetString()));
+        await response.AssertProblemAsync(HttpStatusCode.BadRequest, "VALIDATION_FAILED");
     }
 }

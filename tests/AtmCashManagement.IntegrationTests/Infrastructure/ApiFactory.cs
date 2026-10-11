@@ -14,6 +14,9 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
     // Same image as docker-compose.yml, so it is pulled only once.
     private readonly PostgreSqlContainer _database = new PostgreSqlBuilder("postgres:17-alpine").Build();
 
+    /// <summary>For tests that must bypass the API, e.g. to simulate tampering with stored data.</summary>
+    public string DatabaseConnectionString => _database.GetConnectionString();
+
     public async ValueTask InitializeAsync() => await _database.StartAsync();
 
     public override async ValueTask DisposeAsync()

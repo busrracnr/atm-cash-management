@@ -47,12 +47,19 @@ internal sealed class GlobalExceptionHandler(
             _ => StatusCodes.Status400BadRequest,
         };
 
-        return new ProblemDetails
+        var problem = new ProblemDetails
         {
             Status = status,
             Title = ReasonPhrases.GetReasonPhrase(status),
             Detail = error.Message,
             Extensions = { [ProblemDetailsCustomization.ErrorCodeKey] = error.Code },
         };
+
+        foreach (var (key, value) in error.Details ?? new Dictionary<string, object?>())
+        {
+            problem.Extensions[key] = value;
+        }
+
+        return problem;
     }
 }

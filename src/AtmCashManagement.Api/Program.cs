@@ -1,7 +1,10 @@
 using AtmCashManagement.Api;
 using AtmCashManagement.Api.Errors;
 using AtmCashManagement.Api.Health;
+using AtmCashManagement.Api.OpenApi;
+using AtmCashManagement.Api.Users;
 using AtmCashManagement.Application;
+using AtmCashManagement.Application.Abstractions;
 using AtmCashManagement.Infrastructure;
 using AtmCashManagement.Infrastructure.Persistence;
 
@@ -12,19 +15,26 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure();
 
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<ICurrentUser, HttpCurrentUser>();
+
 builder.Services.AddControllers().AddJsonOptions(options => JsonDefaults.Configure(options.JsonSerializerOptions));
 builder.Services.ConfigureHttpJsonOptions(options => JsonDefaults.Configure(options.SerializerOptions));
 
 builder.Services.AddProblemDetails(options => options.CustomizeProblemDetails = ProblemDetailsCustomization.Apply);
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 
-builder.Services.AddOpenApi(options => options.AddDocumentTransformer((document, _, _) =>
+builder.Services.AddOpenApi(options =>
 {
-    document.Info.Title = "ATM Cash Management API";
-    document.Info.Version = "v1";
-    document.Info.Description = "Cash management backend for a bank's ATM network.";
-    return Task.CompletedTask;
-}));
+    options.AddDocumentTransformer((document, _, _) =>
+    {
+        document.Info.Title = "ATM Cash Management API";
+        document.Info.Version = "v1";
+        document.Info.Description = "Cash management backend for a bank's ATM network.";
+        return Task.CompletedTask;
+    });
+    options.AddOperationTransformer<UserHeaderOperationTransformer>();
+});
 
 var app = builder.Build();
 

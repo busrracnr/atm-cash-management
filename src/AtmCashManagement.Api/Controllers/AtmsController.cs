@@ -20,11 +20,11 @@ public sealed class AtmsController(AtmService atmService) : ControllerBase
         return CreatedAtAction(nameof(GetById), new { atmId = atm.Id }, atm);
     }
 
-    /// <summary>Returns a single ATM.</summary>
+    /// <summary>Returns an ATM with its cassettes and the notes in each.</summary>
     [HttpGet("{atmId:guid}")]
-    [ProducesResponseType<AtmResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<AtmDetailsResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
-    public Task<AtmResponse> GetById(Guid atmId, CancellationToken cancellationToken) =>
+    public Task<AtmDetailsResponse> GetById(Guid atmId, CancellationToken cancellationToken) =>
         atmService.GetAsync(atmId, cancellationToken);
 
     /// <summary>Lists all ATMs ordered by code.</summary>
@@ -32,4 +32,31 @@ public sealed class AtmsController(AtmService atmService) : ControllerBase
     [ProducesResponseType<IReadOnlyList<AtmResponse>>(StatusCodes.Status200OK)]
     public Task<IReadOnlyList<AtmResponse>> List(CancellationToken cancellationToken) =>
         atmService.ListAsync(cancellationToken);
+
+    /// <summary>
+    /// Configures all five cassettes: one DEPOSIT and four RECYCLING, of which one or two hold USD/EUR.
+    /// Allowed while UNCONFIGURED (moves to CONFIGURED), CONFIGURED or MAINTENANCE. A cassette can only be redefined when empty.
+    /// </summary>
+    [HttpPut("{atmId:guid}/cassettes")]
+    [ProducesResponseType<AtmDetailsResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status422UnprocessableEntity)]
+    public Task<AtmDetailsResponse> ConfigureCassettes(
+        Guid atmId, ConfigureCassettesRequest request, CancellationToken cancellationToken) =>
+        atmService.ConfigureCassettesAsync(atmId, request, cancellationToken);
+
+    /// <summary>
+    /// Changes the ATM status. LOADED → IN_SERVICE, IN_SERVICE → MAINTENANCE and MAINTENANCE → IN_SERVICE can be requested;
+    /// any other transition is rejected with INVALID_STATE_TRANSITION.
+    /// </summary>
+    [HttpPut("{atmId:guid}/status")]
+    [ProducesResponseType<AtmDetailsResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
+    public Task<AtmDetailsResponse> ChangeStatus(
+        Guid atmId, ChangeAtmStatusRequest request, CancellationToken cancellationToken) =>
+        atmService.ChangeStatusAsync(atmId, request, cancellationToken);
 }

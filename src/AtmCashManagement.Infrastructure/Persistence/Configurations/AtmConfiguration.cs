@@ -23,5 +23,8 @@ internal sealed class AtmConfiguration : IEntityTypeConfiguration<Atm>
         builder.Property(a => a.Status).HasConversion<string>().HasMaxLength(32).IsRequired();
 
         builder.Property(a => a.CreatedAt).IsRequired();
+
+        builder.HasMany(a => a.Cassettes).WithOne().HasForeignKey(c => c.AtmId).OnDelete(DeleteBehavior.Cascade);
+        builder.Navigation(a => a.Cassettes).UsePropertyAccessMode(PropertyAccessMode.Field);
     }
 }

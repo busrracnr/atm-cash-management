@@ -4,9 +4,9 @@ Backend for managing the cash in a bank's ATM network: cassette configuration, c
 withdrawals (quote → confirm), deposits, reconciliation with four-eyes approval, an immutable
 cassette movement ledger and operational reporting.
 
-> **Status — walking skeleton.** The end-to-end plumbing (API → application → database, Docker,
-> migrations, error model, health checks, tests) is in place with a first slice (ATM registration).
-> Sections marked 🚧 are completed as the corresponding requirements are implemented.
+> **Status — in progress.** Done: ATM registration, cassette configuration, lifecycle, cash loading and
+> unloading, balances (A1–A7, A12, B1, B2) and the movement ledger with its consistency check (B8).
+> Sections marked 🚧 are completed as the remaining requirements are implemented.
 
 ## Contents
 
@@ -79,6 +79,35 @@ dotnet test
 Testcontainers uses the active Docker context, so no extra configuration is needed with Docker
 Desktop or Colima (verified with Colima 0.10 on Apple Silicon).
 
+### End-to-end scenario (Postman)
+
+Import `postman/AtmCashManagement.postman_collection.json` (and optionally
+`postman/local.postman_environment.json`) and run the collection in order with the Collection Runner,
+or from the command line:
+
+```bash
+npx newman run postman/AtmCashManagement.postman_collection.json
+```
+
+Every request carries assertions, so a green run means the scenario behaves as specified. Steps are
+numbered after the order in the assignment; the error examples at the end show the rejection paths.
+
+## API overview
+
+| Method | Route                                  | Purpose                                                      |
+|--------|----------------------------------------|--------------------------------------------------------------|
+| POST   | `/api/atms`                            | Register an ATM (starts UNCONFIGURED)                        |
+| GET    | `/api/atms`, `/api/atms/{id}`          | List ATMs / ATM with its cassettes and notes                 |
+| PUT    | `/api/atms/{id}/cassettes`             | Configure the five cassettes                                 |
+| PUT    | `/api/atms/{id}/status`                | Put in service / switch to maintenance                       |
+| POST   | `/api/atms/{id}/cash-loads`            | Record cash loaded by hand                                   |
+| POST   | `/api/atms/{id}/cash-unloads`          | Empty cassettes                                              |
+| GET    | `/api/atms/{id}/balance`               | Notes per denomination and total balance (requirement A12)   |
+| GET    | `/api/atms/{id}/movements`             | Cassette movement ledger                                     |
+| GET    | `/api/ledger/consistency?atmId=`       | Stored balances vs. balances recomputed from the ledger      |
+
+Every request may carry an `X-User` header; it is recorded on ledger entries (default `anonymous`).
+
 ## Project structure
 
 ```
@@ -90,6 +119,7 @@ Desktop or Colima (verified with Colima 0.10 on Apple Silicon).
 ├── tests
 │   ├── AtmCashManagement.UnitTests
 │   └── AtmCashManagement.IntegrationTests
+├── postman                               # End-to-end collection + local environment
 ├── docker-compose.yml
 ├── Directory.Build.props                 # Shared compiler settings for every project
 ├── Directory.Packages.props              # Central package version management
@@ -163,21 +193,84 @@ those produced by the framework, carries `errorCode` and `traceId`:
 - `InvariantGlobalization` is enabled: the API behaves the same on a developer machine with a
   Turkish locale as in the container (no `i`/`İ` casing surprises).
 
+### ATM lifecycle (B2)
+
+`AtmLifecycle` holds both rule tables, so the whole state machine can be read in one place and is
+tested exhaustively (every status pair):
+
+| Operation                  | Allowed while                               | Effect on status            |
+|----------------------------|---------------------------------------------|-----------------------------|
+| Configure cassettes        | UNCONFIGURED, CONFIGURED, MAINTENANCE       | UNCONFIGURED → CONFIGURED   |
+| Load cash                  | CONFIGURED, MAINTENANCE                     | CONFIGURED → LOADED         |
+| Unload cash                | MAINTENANCE                                 | —                           |
+| Withdraw / deposit         | IN_SERVICE                                  | —                           |
+| `PUT /status` IN_SERVICE   | LOADED, MAINTENANCE                         | → IN_SERVICE                |
+| `PUT /status` MAINTENANCE  | IN_SERVICE                                  | → MAINTENANCE               |
+
+A disallowed status change returns `409 INVALID_STATE_TRANSITION`; an operation in the wrong state
+returns `409 OPERATION_NOT_ALLOWED_IN_CURRENT_STATE`. Both carry `currentStatus` and
+`allowedStatuses` so a client can explain the refusal.
+
+### Cassettes and balances
+
+An ATM is an aggregate: the `Atm` root owns its five `Cassette`s and every change goes through it.
+A cassette's content is stored as `CassetteBalance` rows per currency and denomination: a recycling
+cassette has exactly one, the deposit cassette one per note type it has received. Database CHECK
+constraints mirror the domain rules (slot 1–5, valid definitions, 0 ≤ reserved ≤ notes ≤ 100) as a
+last line of defence.
+
+### Cassette movement ledger (B8)
+
+- **Single write path.** A balance can only change through `Cassette.Record(...)`, which applies the
+  delta *and* returns the matching `CassetteMovement`. The context adds those entries in the same
+  `SaveChanges` (same transaction) as the balances, so they cannot drift apart.
+- **Two quantities.** Each entry has `noteCountDelta` (physical notes) and `reservedCountDelta`
+  (notes held by open quotes), so reservations are reproducible from the ledger too.
+- **Append-only.** EF Core refuses to update or delete an entry, and a PostgreSQL trigger rejects
+  `UPDATE`, `DELETE` and `TRUNCATE` on `cassette_movements` even for direct SQL.
+- **Ordering.** A database identity column (`sequence`) gives a strict global order of entries.
+- **Consistency check.** `GET /api/ledger/consistency` sums the movements per cassette, currency and
+  denomination and compares them with the stored balances. An integration test corrupts a balance
+  with direct SQL and asserts that the check reports it.
+
+### Concurrency (B6)
+
+Every cash-changing operation runs in a transaction that first locks the ATM row
+(`SELECT … FOR UPDATE`), then loads and changes the aggregate. Operations on the same ATM therefore
+run one after another, while different ATMs proceed in parallel; an ATM serves one customer at a
+time, so this costs nothing in practice. 🚧 The parallel-quote test is added with the quote feature.
+
 ### 🚧 Note selection algorithm (B3)
 ### 🚧 Two-step withdrawal, reservations and idempotency (B4)
 ### 🚧 Daily limit and card number protection (B5)
-### 🚧 Concurrency (B6)
-### 🚧 Cassette movement ledger (B8)
 ### 🚧 Reconciliation with four-eyes approval (B9)
 ### 🚧 Reporting, low-cash alerts and the outbox (B10)
 
 ## Assumptions
 
-🚧 Collected while implementing; each ambiguity in the requirements is listed here with the decision taken.
+1. **Foreign currency cassettes.** "At least one and at most two of the recycling cassettes may be
+   configured for a foreign currency" is enforced literally: every ATM has one or two USD/EUR
+   recycling cassettes, so a TRY-only ATM is rejected.
+2. **Loading states.** B2 allows loading only in MAINTENANCE or during initial setup
+   (UNCONFIGURED/CONFIGURED). A second load while LOADED is therefore rejected; a correction before
+   the first service goes through IN_SERVICE → MAINTENANCE. The rule was kept literal rather than
+   widened.
+3. **What can be loaded.** Cash is loaded by hand into recycling cassettes only. The deposit cassette
+   starts empty and is filled by customer deposits.
+4. **Unloading** empties whole cassettes, as when a cash-in-transit crew swaps them, and is allowed in
+   MAINTENANCE only.
+5. **Reconfiguration** is allowed only for empty cassettes; unchanged cassettes keep their notes and
+   their identity, so their ledger history stays attached.
+6. **Direct status changes** are limited to LOADED → IN_SERVICE, IN_SERVICE → MAINTENANCE and
+   MAINTENANCE → IN_SERVICE. CONFIGURED and LOADED are reached by configuring and loading.
+7. **Balance totals** are reported per currency. A single TRY total needs exchange rates, which are
+   introduced with reconciliation (B9) and reporting (B10).
+8. **`X-User`** is optional for now and recorded as `anonymous` when missing.
 
 ## Unfinished items and known limitations
 
-- 🚧 Part A and B1–B10 are being implemented on top of this skeleton.
+- 🚧 Withdrawals, deposits, daily limits, reconciliation and reporting (A9–A11, B3–B7, B9, B10) are
+  being implemented on top of this foundation.
 - Swagger UI is enabled in every environment to make the assignment easy to evaluate; a real
   deployment would restrict it.
 
