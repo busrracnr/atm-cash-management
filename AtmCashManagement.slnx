@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/AtmCashManagement.Api/AtmCashManagement.Api.csproj" />
+    <Project Path="src/AtmCashManagement.Application/AtmCashManagement.Application.csproj" />
+    <Project Path="src/AtmCashManagement.Domain/AtmCashManagement.Domain.csproj" />
+    <Project Path="src/AtmCashManagement.Infrastructure/AtmCashManagement.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/AtmCashManagement.IntegrationTests/AtmCashManagement.IntegrationTests.csproj" />
+    <Project Path="tests/AtmCashManagement.UnitTests/AtmCashManagement.UnitTests.csproj" />
+  </Folder>
+</Solution>

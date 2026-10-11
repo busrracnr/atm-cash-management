@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Pure business rules: no package or project references by design. -->
+
+</Project>
