@@ -48,6 +48,9 @@ public sealed class Cassette
 
     public int FreeCapacity => Capacity - NoteCount;
 
+    /// <summary>Share of the capacity holding notes that can still be dispensed (reserved notes excluded).</summary>
+    public decimal FillRatio => (decimal)AvailableCount / Capacity;
+
     public bool IsEmpty => NoteCount == 0;
 
     internal bool Matches(CassetteDefinition definition) =>

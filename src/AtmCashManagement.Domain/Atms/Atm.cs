@@ -1,3 +1,4 @@
+using AtmCashManagement.Domain.Cash;
 using AtmCashManagement.Domain.Common;
 using AtmCashManagement.Domain.Ledger;
 
@@ -56,6 +57,13 @@ public sealed class Atm
 
     public Cassette GetCassette(int slot) =>
         _cassettes.SingleOrDefault(c => c.Slot == slot) ?? throw new DomainException(CassetteErrors.NotFound(slot));
+
+    /// <summary>Unreserved notes per denomination across the recycling cassettes of a currency.</summary>
+    public IReadOnlyDictionary<int, int> AvailableNotes(Currency currency) =>
+        _cassettes
+            .Where(c => c.Type == CassetteType.Recycling && c.Currency == currency)
+            .GroupBy(c => c.Denomination!.Value)
+            .ToDictionary(g => g.Key, g => g.Sum(c => c.AvailableCount));
 
     /// <summary>Ledger entries produced since the last save; persisted together with the balances.</summary>
     public IReadOnlyList<CassetteMovement> DequeuePendingMovements()

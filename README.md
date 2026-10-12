@@ -5,7 +5,8 @@ withdrawals (quote → confirm), deposits, reconciliation with four-eyes approva
 cassette movement ledger and operational reporting.
 
 > **Status — in progress.** Done: ATM registration, cassette configuration, lifecycle, cash loading and
-> unloading, balances (A1–A7, A12, B1, B2) and the movement ledger with its consistency check (B8).
+> unloading, balances (A1–A7, A12, B1, B2), the movement ledger with its consistency check (B8) and
+> the fewest-notes selection algorithm with its acceptance tests (B3).
 > Sections marked 🚧 are completed as the remaining requirements are implemented.
 
 ## Contents
@@ -240,7 +241,32 @@ Every cash-changing operation runs in a transaction that first locks the ATM row
 run one after another, while different ATMs proceed in parallel; an ATM serves one customer at a
 time, so this costs nothing in practice. 🚧 The parallel-quote test is added with the quote feature.
 
-### 🚧 Note selection algorithm (B3)
+### Note selection algorithm (B3)
+
+Paying an amount with the fewest notes from a limited stock is the *bounded change-making* problem.
+Taking the largest note first does not work: for 160 with 50×3 and 20×10, greedy takes three 50s
+and cannot pay the remaining 10, while 50×2 + 20×3 pays it exactly.
+
+`NoteSelector` solves it with dynamic programming:
+
+- Every denomination is a multiple of 10, so amounts are indexed in units of 10. A full ATM holds at
+  most 4 × 100 × 500 = 200,000 per currency, i.e. 20,000 table cells.
+- Denominations are added one at a time:
+  `fewest[s] = min over k ≤ available of (fewest with the smaller notes)[s − k·note] + k`,
+  remembering the chosen `k` so the breakdown can be read back.
+- One table answers *every* amount, so when the request cannot be paid exactly the lower
+  alternative (largest payable amount below) and the upper alternative (smallest payable amount
+  above, capped by a maximum such as the remaining daily limit) are simple scans.
+- On a tie in note count the breakdown with more large notes wins, keeping results deterministic.
+
+Correctness is covered three ways: the eight acceptance tests are written as a table that mirrors
+the assignment line by line; a randomized test compares the result with exhaustive search on 400
+seeded stocks and requests; and edge cases (amounts that are not a multiple of 10, requests above
+the whole stock, an empty stock, the upper cap) have their own tests.
+
+`CassetteAllocator` then maps the breakdown onto cassettes. When the same currency and denomination
+sits in two cassettes, the one with the higher fill ratio pays first (B2).
+
 ### 🚧 Two-step withdrawal, reservations and idempotency (B4)
 ### 🚧 Daily limit and card number protection (B5)
 ### 🚧 Reconciliation with four-eyes approval (B9)
@@ -266,6 +292,11 @@ time, so this costs nothing in practice. 🚧 The parallel-quote test is added w
 7. **Balance totals** are reported per currency. A single TRY total needs exchange rates, which are
    introduced with reconciliation (B9) and reporting (B10).
 8. **`X-User`** is optional for now and recorded as `anonymous` when missing.
+9. **Amounts that are not a multiple of 10** cannot be paid exactly with 20/50/100/500 notes; the
+   nearest payable amounts are offered instead (e.g. 135 → 120 or 140).
+10. **"Higher fill ratio first"** uses the unreserved notes over the capacity. The fuller cassette
+    pays until it is empty and the next one continues; dispensing note by note alternately from both
+    was considered and not chosen, as the requirement describes an order, not balancing.
 
 ## Unfinished items and known limitations
 
