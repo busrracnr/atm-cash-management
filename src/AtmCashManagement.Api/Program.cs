@@ -34,6 +34,7 @@ builder.Services.AddOpenApi(options =>
         return Task.CompletedTask;
     });
     options.AddOperationTransformer<UserHeaderOperationTransformer>();
+    options.AddSchemaTransformer<RequestExamplesSchemaTransformer>();
 });
 
 var app = builder.Build();
