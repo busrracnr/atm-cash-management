@@ -4,25 +4,23 @@ Backend for managing the cash in a bank's ATM network: cassette configuration, c
 withdrawals (quote → confirm), deposits, reconciliation with four-eyes approval, an immutable
 cassette movement ledger and operational reporting.
 
-> **Status — in progress.** Done: ATM registration, cassette configuration, lifecycle, cash loading and
-> unloading, balances (A1–A7, A12, B1, B2), the movement ledger with its consistency check (B8) and
-> the fewest-notes selection algorithm with its acceptance tests (B3), and the two-step withdrawal
-> with reservations, expiry and idempotent confirmation (A9, A10, B4), daily limits and card number
-> protection (B5), concurrency safety proven by parallel tests (B6), deposits (A11, B7) and
-> reconciliation with four-eyes approval and exchange rates (A8, B9), and the operations report with
-> low-cash alerts through a transactional outbox (B10). Every requirement of the assignment is covered.
-> Sections marked 🚧 are completed as the remaining requirements are implemented.
+> **Status — complete.** Every requirement of Part A and B1–B10 is implemented and covered by tests:
+> 145 unit tests, 60 integration tests against a real PostgreSQL, and a 23-request Postman scenario
+> that runs the end-to-end flow of the assignment. The [requirements traceability](#requirements-traceability)
+> table maps each requirement to its code and tests.
 
 ## Contents
 
 1. [Tech stack](#tech-stack)
 2. [How to run](#how-to-run)
 3. [How to run the tests](#how-to-run-the-tests)
-4. [Project structure](#project-structure)
-5. [Architecture and key design decisions](#architecture-and-key-design-decisions)
-6. [Assumptions](#assumptions)
-7. [Unfinished items and known limitations](#unfinished-items-and-known-limitations)
-8. [AI usage](#ai-usage)
+4. [API overview](#api-overview)
+5. [Requirements traceability](#requirements-traceability)
+6. [Project structure](#project-structure)
+7. [Architecture and key design decisions](#architecture-and-key-design-decisions)
+8. [Assumptions](#assumptions)
+9. [Unfinished items and known limitations](#unfinished-items-and-known-limitations)
+10. [AI usage](#ai-usage)
 
 ## Tech stack
 
@@ -124,6 +122,30 @@ numbered after the order in the assignment; the error examples at the end show t
 | GET    | `/api/alerts?atmId=`                   | Low-cash alerts from the outbox, with publication time       |
 
 Every request may carry an `X-User` header; it is recorded on ledger entries (default `anonymous`).
+
+## Requirements traceability
+
+| Req.  | What                                                        | Implementation                                                             | Tests                                                                 |
+|-------|-------------------------------------------------------------|----------------------------------------------------------------------------|-----------------------------------------------------------------------|
+| A1–A2 | TRY/USD/EUR; 20/50/100/500 notes only                       | `Currency`, `Denominations`                                                | `CassetteConfigurationTests`, `DepositTests`                          |
+| A3–A6 | 5 cassettes of 100: 1 deposit, 4 recycling, 1–2 foreign     | `CassetteConfigurationRules`, `Cassette`                                   | `CassetteConfigurationTests`, `CashLoadingTests`                      |
+| A7    | Configure and record loaded cash before service             | `Atm.ConfigureCassettes`, `Atm.LoadCash`, `AtmLifecycle`                   | `AtmLifecycleTests`, `AtmLifecycleEndpointsTests`                     |
+| A8    | Hand count; differences recorded                            | `Reconciliation`, `Atm.Reconcile`                                          | `ReconciliationTests`, `ReconciliationEndpointsTests`                 |
+| A9    | Breakdown, or the closest payable amount                    | `NoteSelector`, `WithdrawalQuote`                                          | `NoteSelectorAcceptanceTests`, `WithdrawalEndpointsTests`             |
+| A10   | Withdrawal carried out on confirmation                      | `WithdrawalService.ConfirmAsync`, `Atm.Dispense`                           | `WithdrawalQuoteTests`, `WithdrawalEndpointsTests`                    |
+| A11   | Deposit routing                                             | `Atm.Deposit`                                                              | `DepositTests`, `DepositEndpointsTests`                               |
+| A12   | Notes per denomination and total balance at any time        | `CashService.GetBalanceAsync`                                              | `AtmLifecycleEndpointsTests`                                          |
+| B1    | Multiple ATMs                                               | one `Atm` aggregate per ATM                                                | every integration test uses its own ATM; network report test         |
+| B2    | Lifecycle, rejected transitions, fuller cassette first      | `AtmLifecycle`, `CassetteAllocator`                                        | `AtmLifecycleTests` (all 25 status pairs), `CassetteAllocatorTests`   |
+| B3    | Fewest notes; lower/upper alternatives; 8 acceptance tests  | `NoteSelector`                                                             | `NoteSelectorAcceptanceTests`, `NoteSelectorTests`                    |
+| B4    | Quote/confirm, 60 s reservation, `Idempotency-Key`          | `WithdrawalQuote`, `WithdrawalService`, `QuoteExpiryService`               | `WithdrawalQuoteTests`, `WithdrawalEndpointsTests`                    |
+| B5    | Daily limit per card and currency; no plain card numbers    | `DailyWithdrawalLimits`, `PostgresCardLock`, `HmacCardNumberHasher`        | `DailyLimitEndpointsTests`, `CardNumberTests`                         |
+| B6    | Parallel quotes never reserve a note twice                  | `AtmRepository.GetForUpdateAsync` (`FOR UPDATE`)                           | `ConcurrencyTests`                                                    |
+| B7    | Unrecognised notes, overflow, returned notes                | `Atm.Deposit`                                                              | `DepositTests`, `DepositEndpointsTests`                               |
+| B8    | Immutable ledger; reproducible balances; consistency check  | `CassetteMovement`, `Cassette.Record`, DB trigger, `LedgerService`         | `LedgerTests`, `LedgerEndpointsTests`                                 |
+| B9    | Four-eyes reconciliation; exchange-rate table               | `Reconciliation`, `ExchangeRate`                                           | `ReconciliationTests`, `ReconciliationEndpointsTests`                 |
+| B10   | Operations report; low-cash alerts via outbox and worker    | `ReportService`, `LowCashAlert`, `OutboxProcessor`, `OutboxDispatcherService` | `LowCashAlertTests`, `ReportAndAlertEndpointsTests`               |
+| Tech  | Compose, migrations, Swagger, ProblemDetails, health, Postman | `docker-compose.yml`, `DatabaseMigrationExtensions`, `GlobalExceptionHandler` | `HealthEndpointsTests`, `OpenApiDocumentTests`, Postman collection |
 
 ## Project structure
 
@@ -431,13 +453,44 @@ sits in two cassettes, the one with the higher fill ratio pays first (B2).
 
 ## Unfinished items and known limitations
 
-- 🚧 Withdrawals, deposits, daily limits, reconciliation and reporting (A9–A11, B3–B7, B9, B10) are
-  being implemented on top of this foundation.
-- Swagger UI is enabled in every environment to make the assignment easy to evaluate; a real
-  deployment would restrict it.
-- Deposits are not idempotent: a device that retries a deposit request would record it twice. The
+No requirement is left unfinished. Known limitations and deliberate simplifications:
+
+- **Authentication** is out of scope, as the assignment allows: the `X-User` header is trusted as given.
+- **Deposits are not idempotent**: a device that retries a deposit request would record it twice. The
   `Idempotency-Key` mechanism used for confirmations would apply unchanged.
+- **Exchange rates** are seeded and updated by hand through the API; there is no market feed.
+- **Background services** (quote expiry, outbox dispatch) run in every API instance. Correctness is
+  kept by the ATM lock and `SKIP LOCKED`, but the work is duplicated, and alert delivery is
+  at-least-once.
+- **Migrations run at startup**; a production deployment would run them as a separate step.
+- **A reconciliation cannot be rejected**; a wrong count is corrected by a new reconciliation.
+- **List endpoints are capped** by a `take` parameter rather than paged.
+- **The business day** (UTC+3) is a constant in code rather than configuration.
+- **Swagger UI** is enabled in every environment to make the assignment easy to evaluate; a real
+  deployment would restrict it.
 
 ## AI usage
 
-🚧 Written at the end of the assignment.
+I used **Claude Code** (Anthropic, model Claude Opus 5.5) throughout the assignment.
+
+- **What for.** Scaffolding the solution and the Docker setup, implementing the requirements phase by
+  phase, writing the unit and integration tests and the Postman collection, and drafting this README.
+- **How.** Each requirement was implemented as a separate step and verified before moving on: the
+  automated tests, a Newman run of the Postman collection, and manual testing through Swagger UI.
+  Every step is a separate commit.
+- **What was corrected along the way** (found by the build, the tests or manual testing):
+  - xUnit v3 needed the new Microsoft.Testing.Platform runner on .NET 10, and the Testcontainers
+    builder API had changed; both were caught by the build, which treats warnings as errors.
+  - Host port 8080 was already taken on my machine by another development server on `[::1]:8080`, so
+    `localhost:8080` reached the wrong server. The host ports moved to 8088/55432 and became
+    configurable, which also avoids clashes on an evaluator's machine.
+  - Npgsql logged a missing Kerberos library in the Alpine image; `krb5-libs` was added.
+  - A first version of the card-hash test checked that the stored hash did not contain "1111", which
+    passes or fails by chance. It now compares with the exact keyed HMAC.
+  - Swagger showed `"string"` placeholders, which made manual testing confusing; every request now
+    comes with a realistic example.
+  - One commit went in with a style violation because the format check did not block the commit. It
+    was fixed in the next commit, and the check now gates committing.
+  - To make sure the concurrency tests prove something, they were run against a build without the
+    `FOR UPDATE` lock. They failed, as they should: 25 of 25 quotes succeeded instead of 10.
+- **Decisions.** The interpretations of ambiguous points are listed under [Assumptions](#assumptions).
