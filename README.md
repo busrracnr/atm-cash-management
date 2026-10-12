@@ -8,7 +8,7 @@ cassette movement ledger and operational reporting.
 > unloading, balances (A1–A7, A12, B1, B2), the movement ledger with its consistency check (B8) and
 > the fewest-notes selection algorithm with its acceptance tests (B3), and the two-step withdrawal
 > with reservations, expiry and idempotent confirmation (A9, A10, B4), daily limits and card number
-> protection (B5), and concurrency safety proven by parallel tests (B6).
+> protection (B5), concurrency safety proven by parallel tests (B6) and deposits (A11, B7).
 > Sections marked 🚧 are completed as the remaining requirements are implemented.
 
 ## Contents
@@ -112,6 +112,7 @@ numbered after the order in the assignment; the error examples at the end show t
 | GET    | `/api/withdrawal-quotes/{id}`          | Quote and its status                                         |
 | POST   | `/api/withdrawal-quotes/{id}/confirm`  | Withdrawal step 2 (requires `Idempotency-Key`)               |
 | POST   | `/api/withdrawal-quotes/{id}/cancel`   | Cancel a quote and release its notes                         |
+| POST   | `/api/atms/{id}/deposits`              | Deposit: where each note went, what was returned             |
 
 Every request may carry an `X-User` header; it is recorded on ledger entries (default `anonymous`).
 
@@ -240,6 +241,15 @@ last line of defence.
   denomination and compares them with the stored balances. An integration test corrupts a balance
   with direct SQL and asserts that the check reports it.
 
+### Deposits (A11, B7)
+
+`Atm.Deposit` routes each note type through an ordered list of targets: the matching recycling
+cassettes (the emptier one first when there are two), then the deposit cassette, which stores notes
+of any currency as separate balances. Whatever still does not fit is returned. Larger notes are
+placed first, so if space runs out the customer gets back the smallest value. Unrecognised notes are
+counted only to be returned and never touch the ledger. Every placement is a `DEPOSIT` entry whose
+reference is the deposit id, so the ledger shows which request filled which cassette.
+
 ### Concurrency (B6)
 
 Every cash-changing operation runs in a transaction that first locks the ATM row
@@ -359,6 +369,12 @@ sits in two cassettes, the one with the higher fill ratio pays first (B2).
     defined in one place (`BusinessDay`).
 15. **Over-limit requests are rejected, not reduced.** The customer gets the remaining amount in the
     error and can ask again; silently paying less was considered surprising for a customer.
+16. **Deposit routing order.** With two matching recycling cassettes the emptier one is filled first
+    (the requirement only orders dispensing). When space runs out, larger notes are kept first.
+17. **"For each note, which cassette it went to"** is reported per note type and cassette (e.g.
+    "TRY 100 × 5 → slot 2") rather than one line per physical note.
+18. **A deposit may mix currencies**, since the deposit cassette accepts any currency; each recycling
+    cassette still only takes its own currency and denomination.
 
 ## Unfinished items and known limitations
 
@@ -366,6 +382,8 @@ sits in two cassettes, the one with the higher fill ratio pays first (B2).
   being implemented on top of this foundation.
 - Swagger UI is enabled in every environment to make the assignment easy to evaluate; a real
   deployment would restrict it.
+- Deposits are not idempotent: a device that retries a deposit request would record it twice. The
+  `Idempotency-Key` mechanism used for confirmations would apply unchanged.
 
 ## AI usage
 

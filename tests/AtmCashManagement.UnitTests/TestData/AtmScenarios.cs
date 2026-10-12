@@ -56,6 +56,23 @@ internal static class AtmScenarios
         return atm;
     }
 
+    /// <summary>In service, with TRY 100 notes in both slot 2 and slot 3.</summary>
+    public static Atm WithTwoTry100Cassettes(int slot2Notes, int slot3Notes)
+    {
+        var atm = Unconfigured();
+        atm.ConfigureCassettes(
+        [
+            new CassetteDefinition(1, CassetteType.Deposit),
+            new CassetteDefinition(2, CassetteType.Recycling, Currency.TRY, 100),
+            new CassetteDefinition(3, CassetteType.Recycling, Currency.TRY, 100),
+            new CassetteDefinition(4, CassetteType.Recycling, Currency.TRY, 20),
+            new CassetteDefinition(5, CassetteType.Recycling, Currency.USD, 100),
+        ], Now);
+        atm.LoadCash([new CashLoadItem(2, slot2Notes), new CashLoadItem(3, slot3Notes), new CashLoadItem(4, 25), new CashLoadItem(5, 10)], Context());
+        atm.ChangeStatus(AtmStatus.InService);
+        return atm;
+    }
+
     public static Atm InMaintenance()
     {
         var atm = InService();

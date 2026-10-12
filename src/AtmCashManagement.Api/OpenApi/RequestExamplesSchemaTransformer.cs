@@ -2,6 +2,7 @@ using System.Text.Json.Nodes;
 
 using AtmCashManagement.Application.Atms;
 using AtmCashManagement.Application.Cash;
+using AtmCashManagement.Application.Deposits;
 using AtmCashManagement.Application.Withdrawals;
 
 using Microsoft.AspNetCore.OpenApi;
@@ -49,6 +50,16 @@ internal sealed class RequestExamplesSchemaTransformer : IOpenApiSchemaTransform
             """,
         [typeof(ConfirmWithdrawalQuoteRequest)] = """
             { "option": "EXACT" }
+            """,
+        [typeof(DepositRequest)] = """
+            {
+              "notes": [
+                { "currency": "TRY", "denomination": 100, "count": 5 },
+                { "currency": "TRY", "denomination": 500, "count": 2 },
+                { "currency": "EUR", "denomination": 50, "count": 3 }
+              ],
+              "unrecognizedCount": 1
+            }
             """,
     };
 

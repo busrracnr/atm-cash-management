@@ -1,5 +1,6 @@
 using AtmCashManagement.Domain.Cash;
 using AtmCashManagement.Domain.Common;
+using AtmCashManagement.Domain.Deposits;
 using AtmCashManagement.Domain.Ledger;
 using AtmCashManagement.Domain.Withdrawals;
 
@@ -236,6 +237,87 @@ public sealed class Atm
             var cassette = GetRecyclingCassette(allocation);
             _pendingMovements.Add(cassette.Record(
                 MovementType.ReservationRelease, cassette.Currency!.Value, allocation.Denomination, 0, -allocation.Count, context));
+        }
+    }
+
+    /// <summary>
+    /// Routes inserted notes (requirements A11, B7): a matching recycling cassette first, the deposit cassette when there is
+    /// no match or the recycling cassette is full, and back to the customer when the deposit cassette is full too.
+    /// Larger notes are placed first, so if space runs out the customer gets back the smallest value.
+    /// </summary>
+    public DepositResult Deposit(
+        IReadOnlyCollection<DepositNote> notes, int unrecognizedCount, Guid depositId, MovementContext context)
+    {
+        EnsureAllowed(AtmOperation.Deposit);
+        ValidateDeposit(notes, unrecognizedCount);
+
+        var depositCassette = _cassettes.Single(c => c.Type == CassetteType.Deposit);
+        var placements = new List<DepositPlacement>();
+        var returned = new List<DepositReturn>();
+
+        foreach (var note in notes.OrderByDescending(n => n.Denomination).ThenBy(n => n.Currency))
+        {
+            var remaining = note.Count;
+
+            // With two matching cassettes, the emptier one takes notes first, keeping them balanced.
+            var targets = _cassettes
+                .Where(c => c.Type == CassetteType.Recycling && c.Currency == note.Currency && c.Denomination == note.Denomination)
+                .OrderByDescending(c => c.FreeCapacity)
+                .ThenBy(c => c.Slot)
+                .Append(depositCassette);
+
+            foreach (var cassette in targets)
+            {
+                var placed = Math.Min(remaining, cassette.FreeCapacity);
+                if (placed == 0)
+                {
+                    continue;
+                }
+
+                _pendingMovements.Add(cassette.Record(MovementType.Deposit, note.Currency, note.Denomination, placed, 0, context));
+                placements.Add(new DepositPlacement(note.Currency, note.Denomination, placed, cassette.Slot, cassette.Type));
+                remaining -= placed;
+                if (remaining == 0)
+                {
+                    break;
+                }
+            }
+
+            if (remaining > 0)
+            {
+                returned.Add(new DepositReturn(note.Currency, note.Denomination, remaining));
+            }
+        }
+
+        return new DepositResult(depositId, placements, returned, unrecognizedCount);
+    }
+
+    private static void ValidateDeposit(IReadOnlyCollection<DepositNote> notes, int unrecognizedCount)
+    {
+        if (unrecognizedCount < 0)
+        {
+            throw new DomainException(DepositErrors.Invalid("The number of unrecognised notes cannot be negative."));
+        }
+
+        if (notes.Count == 0 && unrecognizedCount == 0)
+        {
+            throw new DomainException(DepositErrors.Invalid("A deposit needs at least one note."));
+        }
+
+        if (notes.Any(n => n.Count <= 0))
+        {
+            throw new DomainException(DepositErrors.Invalid("Each note count must be positive."));
+        }
+
+        var unsupported = notes.FirstOrDefault(n => !Denominations.IsSupported(n.Denomination));
+        if (unsupported is not null)
+        {
+            throw new DomainException(CassetteErrors.UnsupportedDenomination(unsupported.Denomination));
+        }
+
+        if (notes.Select(n => (n.Currency, n.Denomination)).Distinct().Count() != notes.Count)
+        {
+            throw new DomainException(DepositErrors.Invalid("Each currency and denomination can appear only once per deposit."));
         }
     }
 

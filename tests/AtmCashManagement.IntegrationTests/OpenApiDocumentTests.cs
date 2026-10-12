@@ -14,6 +14,9 @@ public sealed class OpenApiDocumentTests(ApiFactory factory)
     [InlineData("LoadCashRequest", "items")]
     [InlineData("UnloadCashRequest", "slots")]
     [InlineData("ChangeAtmStatusRequest", "status")]
+    [InlineData("CreateWithdrawalQuoteRequest", "cardNumber")]
+    [InlineData("ConfirmWithdrawalQuoteRequest", "option")]
+    [InlineData("DepositRequest", "notes")]
     public async Task Request_bodies_come_with_a_realistic_example(string schemaName, string exampleProperty)
     {
         var document = await _client.GetJsonAsync("/openapi/v1.json");

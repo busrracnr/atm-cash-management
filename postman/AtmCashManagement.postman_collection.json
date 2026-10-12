@@ -319,6 +319,46 @@
       }
     },
     {
+      "name": "07 Deposit",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Matching notes go to recycling cassettes, the rest to the deposit cassette', () => {",
+              "  pm.response.to.have.status(200);",
+              "  const deposit = pm.response.json();",
+              "  const slotOf = (cur, den) => deposit.placements.find(p => p.currency === cur && p.denomination === den).slot;",
+              "  pm.expect(slotOf('TRY', 100)).to.eql(2);",
+              "  pm.expect(slotOf('TRY', 500)).to.eql(1);",
+              "  pm.expect(slotOf('EUR', 50)).to.eql(1);",
+              "  pm.expect(deposit.unrecognizedReturned).to.eql(1);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-User",
+            "value": "{{user}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"notes\": [\n    { \"currency\": \"TRY\", \"denomination\": 100, \"count\": 5 },\n    { \"currency\": \"TRY\", \"denomination\": 500, \"count\": 2 },\n    { \"currency\": \"EUR\", \"denomination\": 50, \"count\": 3 }\n  ],\n  \"unrecognizedCount\": 1\n}"
+        },
+        "url": "{{baseUrl}}/api/atms/{{atmId}}/deposits"
+      }
+    },
+    {
       "name": "08 Switch to maintenance",
       "event": [
         {
@@ -363,9 +403,10 @@
             "exec": [
               "pm.test('Balance shows notes per denomination and totals per currency', () => {",
               "  pm.response.to.have.status(200);",
-              "  const balance = pm.response.json();",
-              "  pm.expect(balance.totals.find(t => t.currency === 'TRY').amount).to.eql(7600 - 160);",
-              "  pm.expect(balance.totals.find(t => t.currency === 'USD').amount).to.eql(2000);",
+              "  const total = cur => pm.response.json().totals.find(t => t.currency === cur).amount;",
+              "  pm.expect(total('TRY')).to.eql(7600 - 160 + 1500);",
+              "  pm.expect(total('USD')).to.eql(2000);",
+              "  pm.expect(total('EUR')).to.eql(150);",
               "});"
             ]
           }
@@ -384,12 +425,14 @@
           "script": {
             "type": "text/javascript",
             "exec": [
-              "pm.test('Loads, the reservation and the withdrawal are in the ledger', () => {",
+              "pm.test('Loads, the withdrawal and the deposit are in the ledger', () => {",
               "  pm.response.to.have.status(200);",
               "  const types = pm.response.json().map(m => m.type);",
-              "  pm.expect(types.filter(t => t === 'LOAD')).to.have.lengthOf(4);",
-              "  pm.expect(types.filter(t => t === 'RESERVATION')).to.have.lengthOf(2);",
-              "  pm.expect(types.filter(t => t === 'WITHDRAWAL')).to.have.lengthOf(2);",
+              "  const count = type => types.filter(t => t === type).length;",
+              "  pm.expect(count('LOAD')).to.eql(4);",
+              "  pm.expect(count('RESERVATION')).to.eql(2);",
+              "  pm.expect(count('WITHDRAWAL')).to.eql(2);",
+              "  pm.expect(count('DEPOSIT')).to.eql(3);",
               "});"
             ]
           }
