@@ -1,5 +1,6 @@
 using AtmCashManagement.Application.Abstractions;
 using AtmCashManagement.Application.Idempotency;
+using AtmCashManagement.Application.Outbox;
 using AtmCashManagement.Domain.Atms;
 using AtmCashManagement.Domain.Cash;
 using AtmCashManagement.Domain.Ledger;
@@ -28,6 +29,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
 
     public DbSet<ExchangeRate> ExchangeRates => Set<ExchangeRate>();
 
+    public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
+
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
     {
         PrepareLedger();
@@ -43,12 +46,13 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     protected override void OnModelCreating(ModelBuilder modelBuilder) =>
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(AppDbContext).Assembly);
 
-    // Balances and their ledger entries are written in the same SaveChanges, so they can never drift apart.
+    // Balances, their ledger entries and the alerts they raise are written in the same SaveChanges (one transaction).
     private void PrepareLedger()
     {
         foreach (var atm in ChangeTracker.Entries<Atm>().Select(entry => entry.Entity).ToList())
         {
             CassetteMovements.AddRange(atm.DequeuePendingMovements());
+            OutboxMessages.AddRange(atm.DequeuePendingAlerts().Select(OutboxMessage.From));
         }
 
         if (ChangeTracker.Entries<CassetteMovement>().Any(e => e.State is EntityState.Modified or EntityState.Deleted))

@@ -7,6 +7,9 @@ public sealed class Cassette
 {
     public const int Capacity = 100;
 
+    /// <summary>10% of the capacity: below this many available notes a recycling cassette is low on cash.</summary>
+    public const int LowCashThreshold = Capacity / 10;
+
     private readonly List<CassetteBalance> _balances = [];
 
     // Required by EF Core for materialisation.
@@ -52,6 +55,8 @@ public sealed class Cassette
     public decimal FillRatio => (decimal)AvailableCount / Capacity;
 
     public bool IsEmpty => NoteCount == 0;
+
+    public bool IsLowOnCash => Type == CassetteType.Recycling && AvailableCount < LowCashThreshold;
 
     internal bool Matches(CassetteDefinition definition) =>
         Type == definition.Type && Currency == definition.Currency && Denomination == definition.Denomination;

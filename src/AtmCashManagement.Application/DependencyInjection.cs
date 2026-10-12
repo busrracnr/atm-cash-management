@@ -4,6 +4,7 @@ using AtmCashManagement.Application.Deposits;
 using AtmCashManagement.Application.ExchangeRates;
 using AtmCashManagement.Application.Ledger;
 using AtmCashManagement.Application.Reconciliations;
+using AtmCashManagement.Application.Reports;
 using AtmCashManagement.Application.Withdrawals;
 
 using Microsoft.Extensions.DependencyInjection;
@@ -22,6 +23,7 @@ public static class DependencyInjection
         services.AddScoped<DepositService>();
         services.AddScoped<ReconciliationService>();
         services.AddScoped<ExchangeRateService>();
+        services.AddScoped<ReportService>();
 
         return services;
     }

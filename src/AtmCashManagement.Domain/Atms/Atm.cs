@@ -1,3 +1,4 @@
+using AtmCashManagement.Domain.Alerts;
 using AtmCashManagement.Domain.Cash;
 using AtmCashManagement.Domain.Common;
 using AtmCashManagement.Domain.Deposits;
@@ -15,6 +16,7 @@ public sealed class Atm
 
     private readonly List<Cassette> _cassettes = [];
     private readonly List<CassetteMovement> _pendingMovements = [];
+    private readonly List<LowCashAlert> _pendingAlerts = [];
 
     // Required by EF Core for materialisation.
     private Atm()
@@ -77,6 +79,14 @@ public sealed class Atm
         var movements = _pendingMovements.ToList();
         _pendingMovements.Clear();
         return movements;
+    }
+
+    /// <summary>Low-cash alerts raised since the last save; written to the outbox in the same transaction.</summary>
+    public IReadOnlyList<LowCashAlert> DequeuePendingAlerts()
+    {
+        var alerts = _pendingAlerts.ToList();
+        _pendingAlerts.Clear();
+        return alerts;
     }
 
     public void ChangeStatus(AtmStatus target)
@@ -165,8 +175,8 @@ public sealed class Atm
 
         foreach (var (item, cassette) in loads)
         {
-            _pendingMovements.Add(cassette.Record(
-                MovementType.Load, cassette.Currency!.Value, cassette.Denomination!.Value, item.Count, 0, context));
+            RecordMovement(cassette,
+                MovementType.Load, cassette.Currency!.Value, cassette.Denomination!.Value, item.Count, 0, context);
         }
 
         if (Status == AtmStatus.Configured)
@@ -196,8 +206,8 @@ public sealed class Atm
         {
             foreach (var balance in cassette.Balances.Where(b => b.NoteCount > 0).ToList())
             {
-                _pendingMovements.Add(cassette.Record(
-                    MovementType.Unload, balance.Currency, balance.Denomination, -balance.NoteCount, 0, context));
+                RecordMovement(cassette,
+                    MovementType.Unload, balance.Currency, balance.Denomination, -balance.NoteCount, 0, context);
             }
         }
     }
@@ -220,8 +230,8 @@ public sealed class Atm
 
         foreach (var (allocation, cassette) in reservations)
         {
-            _pendingMovements.Add(cassette.Record(
-                MovementType.Reservation, cassette.Currency!.Value, allocation.Denomination, 0, allocation.Count, context));
+            RecordMovement(cassette,
+                MovementType.Reservation, cassette.Currency!.Value, allocation.Denomination, 0, allocation.Count, context);
         }
     }
 
@@ -233,8 +243,8 @@ public sealed class Atm
         foreach (var allocation in notes)
         {
             var cassette = GetRecyclingCassette(allocation);
-            _pendingMovements.Add(cassette.Record(
-                MovementType.Withdrawal, cassette.Currency!.Value, allocation.Denomination, -allocation.Count, -allocation.Count, context));
+            RecordMovement(cassette,
+                MovementType.Withdrawal, cassette.Currency!.Value, allocation.Denomination, -allocation.Count, -allocation.Count, context);
         }
     }
 
@@ -244,8 +254,8 @@ public sealed class Atm
         foreach (var allocation in notes)
         {
             var cassette = GetRecyclingCassette(allocation);
-            _pendingMovements.Add(cassette.Record(
-                MovementType.ReservationRelease, cassette.Currency!.Value, allocation.Denomination, 0, -allocation.Count, context));
+            RecordMovement(cassette,
+                MovementType.ReservationRelease, cassette.Currency!.Value, allocation.Denomination, 0, -allocation.Count, context);
         }
     }
 
@@ -283,7 +293,7 @@ public sealed class Atm
                     continue;
                 }
 
-                _pendingMovements.Add(cassette.Record(MovementType.Deposit, note.Currency, note.Denomination, placed, 0, context));
+                RecordMovement(cassette, MovementType.Deposit, note.Currency, note.Denomination, placed, 0, context);
                 placements.Add(new DepositPlacement(note.Currency, note.Denomination, placed, cassette.Slot, cassette.Type));
                 remaining -= placed;
                 if (remaining == 0)
@@ -317,8 +327,8 @@ public sealed class Atm
 
         foreach (var line in reconciliation.Lines.Where(l => l.Difference != 0))
         {
-            _pendingMovements.Add(GetCassette(line.Slot).Record(
-                MovementType.ReconciliationAdjustment, line.Currency, line.Denomination, line.Difference, 0, context));
+            RecordMovement(GetCassette(line.Slot),
+                MovementType.ReconciliationAdjustment, line.Currency, line.Denomination, line.Difference, 0, context);
         }
 
         if (reconciliation.Status == ReconciliationStatus.AwaitingApproval)
@@ -361,6 +371,20 @@ public sealed class Atm
         if (notes.Select(n => (n.Currency, n.Denomination)).Distinct().Count() != notes.Count)
         {
             throw new DomainException(DepositErrors.Invalid("Each currency and denomination can appear only once per deposit."));
+        }
+    }
+
+    // Single path for every balance change: ledger entry plus a low-cash alert when the threshold is crossed downwards.
+    private void RecordMovement(
+        Cassette cassette, MovementType type, Currency currency, int denomination, int noteCountDelta, int reservedCountDelta, MovementContext context)
+    {
+        var wasLow = cassette.IsLowOnCash;
+        _pendingMovements.Add(cassette.Record(type, currency, denomination, noteCountDelta, reservedCountDelta, context));
+
+        if (!wasLow && cassette.IsLowOnCash)
+        {
+            _pendingAlerts.Add(new LowCashAlert(
+                Id, Code, cassette.Slot, currency, denomination, cassette.AvailableCount, Cassette.LowCashThreshold, context.OccurredAt));
         }
     }
 

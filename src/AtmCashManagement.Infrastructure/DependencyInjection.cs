@@ -1,4 +1,5 @@
 using AtmCashManagement.Application.Abstractions;
+using AtmCashManagement.Infrastructure.Outbox;
 using AtmCashManagement.Infrastructure.Persistence;
 using AtmCashManagement.Infrastructure.Security;
 using AtmCashManagement.Infrastructure.Withdrawals;
@@ -31,8 +32,11 @@ public static class DependencyInjection
         services.AddSingleton<ICardNumberHasher>(serviceProvider =>
             new HmacCardNumberHasher(serviceProvider.GetRequiredService<IConfiguration>()[HmacCardNumberHasher.KeySetting]));
 
+        services.AddScoped<IOutboxProcessor, OutboxProcessor>();
+
         services.AddSingleton(TimeProvider.System);
         services.AddHostedService<QuoteExpiryService>();
+        services.AddHostedService<OutboxDispatcherService>();
 
         services.AddHealthChecks().AddDbContextCheck<AppDbContext>("database");
 

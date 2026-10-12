@@ -1,3 +1,4 @@
+using AtmCashManagement.Application.Abstractions;
 using AtmCashManagement.Application.Withdrawals;
 using AtmCashManagement.Infrastructure;
 
@@ -38,6 +39,13 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
     {
         await using var scope = Services.CreateAsyncScope();
         return await scope.ServiceProvider.GetRequiredService<WithdrawalService>().ExpireDueQuotesAsync(CancellationToken.None);
+    }
+
+    /// <summary>Runs the outbox dispatcher once instead of waiting for the background service.</summary>
+    public async Task<int> ProcessOutboxAsync()
+    {
+        await using var scope = Services.CreateAsyncScope();
+        return await scope.ServiceProvider.GetRequiredService<IOutboxProcessor>().ProcessPendingAsync(CancellationToken.None);
     }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)

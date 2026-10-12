@@ -1,4 +1,5 @@
 using AtmCashManagement.Application.Idempotency;
+using AtmCashManagement.Application.Outbox;
 using AtmCashManagement.Domain.Atms;
 using AtmCashManagement.Domain.Cash;
 using AtmCashManagement.Domain.Ledger;
@@ -27,6 +28,8 @@ public interface IAppDbContext
     DbSet<Reconciliation> Reconciliations { get; }
 
     DbSet<ExchangeRate> ExchangeRates { get; }
+
+    DbSet<OutboxMessage> OutboxMessages { get; }
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }

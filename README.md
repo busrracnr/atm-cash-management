@@ -9,7 +9,8 @@ cassette movement ledger and operational reporting.
 > the fewest-notes selection algorithm with its acceptance tests (B3), and the two-step withdrawal
 > with reservations, expiry and idempotent confirmation (A9, A10, B4), daily limits and card number
 > protection (B5), concurrency safety proven by parallel tests (B6), deposits (A11, B7) and
-> reconciliation with four-eyes approval and exchange rates (A8, B9).
+> reconciliation with four-eyes approval and exchange rates (A8, B9), and the operations report with
+> low-cash alerts through a transactional outbox (B10). Every requirement of the assignment is covered.
 > Sections marked 🚧 are completed as the remaining requirements are implemented.
 
 ## Contents
@@ -119,6 +120,8 @@ numbered after the order in the assignment; the error examples at the end show t
 | POST   | `/api/reconciliations/{id}/approve`    | Four-eyes approval by a different `X-User`                   |
 | GET    | `/api/exchange-rates`                  | TRY value of each currency                                   |
 | PUT    | `/api/exchange-rates/{currency}`       | Update a rate                                                |
+| GET    | `/api/reports/operations?atmId=`       | Operations report: per ATM/cassette, per currency, total TRY |
+| GET    | `/api/alerts?atmId=`                   | Low-cash alerts from the outbox, with publication time       |
 
 Every request may carry an `X-User` header; it is recorded on ledger entries (default `anonymous`).
 
@@ -357,7 +360,22 @@ sits in two cassettes, the one with the higher fill ratio pays first (B2).
   approval step, and because the ATM stays out of service until approval anyway, so no customer ever
   meets an unapproved figure. A wrong count is corrected by a new reconciliation.
 
-### 🚧 Reporting, low-cash alerts and the outbox (B10)
+### Reporting, low-cash alerts and the outbox (B10)
+
+- **Operations report.** Per ATM and cassette: notes, reserved and available counts (plus a
+  `lowOnCash` flag); totals per currency (amount, reserved, available, TRY value) for each ATM and
+  for the network; and the overall total in TRY. The rates used are returned with the report.
+- **When an alert fires.** Every balance change in the aggregate goes through one method, which
+  raises a `LowCashAlert` when a recycling cassette's *available* notes drop from 10 or more to below
+  10 (10% of the capacity). Only the crossing counts, so a cassette that stays low does not alert on
+  every withdrawal; recovering above the threshold re-arms it.
+- **Transactional outbox.** The context turns pending alerts into `outbox_messages` rows in the same
+  `SaveChanges`, i.e. the same transaction, as the change that raised them. A rolled-back
+  operation therefore leaves no alert, and a committed one cannot lose its alert.
+- **Dispatcher.** A hosted service polls every 2 seconds, takes a batch with
+  `FOR UPDATE SKIP LOCKED` (several API instances can share the outbox without double publishing),
+  logs each message and marks it processed. Delivery is at-least-once: a crash between publishing
+  and committing would publish again, so consumers should de-duplicate by message id.
 
 ## Assumptions
 
@@ -405,6 +423,11 @@ sits in two cassettes, the one with the higher fill ratio pays first (B2).
 21. **Every cassette must be counted** in a reconciliation; a partial count is rejected.
 22. **Approval needs an explicit `X-User`**; an anonymous request cannot approve, so two anonymous
     callers cannot pass as two different people.
+23. **"Falls below 10%"** is a crossing: from 10 or more available notes to fewer than 10. Exactly 10
+    is not low. Any operation can cause it (a reservation, a reconciliation, an unload); filling an
+    empty cassette does not.
+24. **Alerts are "published" by logging**, as the requirement asks; the dispatcher is where a message
+    broker or notification service would plug in.
 
 ## Unfinished items and known limitations
 

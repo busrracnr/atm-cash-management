@@ -563,6 +563,33 @@
       }
     },
     {
+      "name": "10b Report: operations (per ATM and cassette, totals in TRY)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Counts per cassette and the TRY total add up', () => {",
+              "  pm.response.to.have.status(200);",
+              "  const report = pm.response.json();",
+              "  const atm = report.atms[0];",
+              "  const rate = cur => report.exchangeRates.find(r => r.currency === cur).rateToTry;",
+              "  atm.cassettes.forEach(c => pm.expect(c.availableCount).to.eql(c.noteCount - c.reservedCount));",
+              "  const expectedTry = atm.totals.reduce((sum, t) => sum + t.amount * rate(t.currency), 0);",
+              "  pm.expect(atm.totalTry).to.be.closeTo(expectedTry, 0.01);",
+              "  pm.expect(report.totalTry).to.be.closeTo(atm.totalTry, 0.01);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/api/reports/operations?atmId={{atmId}}"
+      }
+    },
+    {
       "name": "11 Ledger: movements",
       "event": [
         {
@@ -608,6 +635,27 @@
       "request": {
         "method": "GET",
         "url": "{{baseUrl}}/api/ledger/consistency?atmId={{atmId}}"
+      }
+    },
+    {
+      "name": "13 Low-cash alerts (outbox)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Alerts are listed with their publication time', () => {",
+              "  pm.response.to.have.status(200);",
+              "  pm.expect(pm.response.json()).to.be.an('array');",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/api/alerts?atmId={{atmId}}"
       }
     },
     {
