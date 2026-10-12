@@ -242,8 +242,9 @@ tested exhaustively (every status pair):
 | Configure cassettes        | UNCONFIGURED, CONFIGURED, MAINTENANCE       | UNCONFIGURED → CONFIGURED   |
 | Load cash                  | CONFIGURED, MAINTENANCE                     | CONFIGURED → LOADED         |
 | Unload cash                | MAINTENANCE                                 | —                           |
+| Reconcile                  | CONFIGURED, MAINTENANCE (none pending)      | may hold the ATM for approval |
 | Withdraw / deposit         | IN_SERVICE                                  | —                           |
-| `PUT /status` IN_SERVICE   | LOADED, MAINTENANCE                         | → IN_SERVICE                |
+| `PUT /status` IN_SERVICE   | LOADED, MAINTENANCE (no pending approval)   | → IN_SERVICE                |
 | `PUT /status` MAINTENANCE  | IN_SERVICE                                  | → MAINTENANCE               |
 
 A disallowed status change returns `409 INVALID_STATE_TRANSITION`; an operation in the wrong state
@@ -408,47 +409,50 @@ sits in two cassettes, the one with the higher fill ratio pays first (B2).
    (UNCONFIGURED/CONFIGURED). A second load while LOADED is therefore rejected; a correction before
    the first service goes through IN_SERVICE → MAINTENANCE. The rule was kept literal rather than
    widened.
-3. **What can be loaded.** Cash is loaded by hand into recycling cassettes only. The deposit cassette
+3. **UNCONFIGURED allows only configuration.** Loading and reconciliation need configured cassettes,
+   so they start from CONFIGURED, although the requirement names UNCONFIGURED/CONFIGURED for the
+   initial setup.
+4. **What can be loaded.** Cash is loaded by hand into recycling cassettes only. The deposit cassette
    starts empty and is filled by customer deposits.
-4. **Unloading** empties whole cassettes, as when a cash-in-transit crew swaps them, and is allowed in
+5. **Unloading** empties whole cassettes, as when a cash-in-transit crew swaps them, and is allowed in
    MAINTENANCE only.
-5. **Reconfiguration** is allowed only for empty cassettes; unchanged cassettes keep their notes and
+6. **Reconfiguration** is allowed only for empty cassettes; unchanged cassettes keep their notes and
    their identity, so their ledger history stays attached.
-6. **Direct status changes** are limited to LOADED → IN_SERVICE, IN_SERVICE → MAINTENANCE and
+7. **Direct status changes** are limited to LOADED → IN_SERVICE, IN_SERVICE → MAINTENANCE and
    MAINTENANCE → IN_SERVICE. CONFIGURED and LOADED are reached by configuring and loading.
-7. **Balance totals** are reported per currency. A single TRY total needs exchange rates, which are
+8. **Balance totals** are reported per currency. A single TRY total needs exchange rates, which are
    introduced with reconciliation (B9) and reporting (B10).
-8. **`X-User`** is optional for now and recorded as `anonymous` when missing.
-9. **Amounts that are not a multiple of 10** cannot be paid exactly with 20/50/100/500 notes; the
+9. **`X-User`** is optional for now and recorded as `anonymous` when missing.
+10. **Amounts that are not a multiple of 10** cannot be paid exactly with 20/50/100/500 notes; the
    nearest payable amounts are offered instead (e.g. 135 → 120 or 140).
-10. **"Higher fill ratio first"** uses the unreserved notes over the capacity. The fuller cassette
+11. **"Higher fill ratio first"** uses the unreserved notes over the capacity. The fuller cassette
     pays until it is empty and the next one continues; dispensing note by note alternately from both
     was considered and not chosen, as the requirement describes an order, not balancing.
-11. **Exact payment comes alone.** When the request can be paid exactly, no alternatives are offered.
-12. **Idempotency stores successes.** Only successful confirmations are stored. A failed attempt
+12. **Exact payment comes alone.** When the request can be paid exactly, no alternatives are offered.
+13. **Idempotency stores successes.** Only successful confirmations are stored. A failed attempt
     (e.g. `QUOTE_EXPIRED`) can be retried with the same key and is evaluated again.
-13. **Maintenance cancels quotes.** A customer cannot confirm a withdrawal at an ATM that has been
+14. **Maintenance cancels quotes.** A customer cannot confirm a withdrawal at an ATM that has been
     taken out of service, so open quotes are cancelled and their notes released.
-14. **Business day** for the daily limit is the calendar day in Türkiye (UTC+3 all year); it is
+15. **Business day** for the daily limit is the calendar day in Türkiye (UTC+3 all year); it is
     defined in one place (`BusinessDay`).
-15. **Over-limit requests are rejected, not reduced.** The customer gets the remaining amount in the
+16. **Over-limit requests are rejected, not reduced.** The customer gets the remaining amount in the
     error and can ask again; silently paying less was considered surprising for a customer.
-16. **Deposit routing order.** With two matching recycling cassettes the emptier one is filled first
+17. **Deposit routing order.** With two matching recycling cassettes the emptier one is filled first
     (the requirement only orders dispensing). When space runs out, larger notes are kept first.
-17. **"For each note, which cassette it went to"** is reported per note type and cassette (e.g.
+18. **"For each note, which cassette it went to"** is reported per note type and cassette (e.g.
     "TRY 100 × 5 → slot 2") rather than one line per physical note.
-18. **A deposit may mix currencies**, since the deposit cassette accepts any currency; each recycling
+19. **A deposit may mix currencies**, since the deposit cassette accepts any currency; each recycling
     cassette still only takes its own currency and denomination.
-19. **"Total TRY value of the differences"** is the sum of absolute values: a 600 TRY surplus in one
+20. **"Total TRY value of the differences"** is the sum of absolute values: a 600 TRY surplus in one
     cassette and a 600 TRY shortage in another make 1,200, not zero.
-20. **"Exceeds TRY 1,000"** means strictly more than 1,000; exactly 1,000 needs no approval.
-21. **Every cassette must be counted** in a reconciliation; a partial count is rejected.
-22. **Approval needs an explicit `X-User`**; an anonymous request cannot approve, so two anonymous
+21. **"Exceeds TRY 1,000"** means strictly more than 1,000; exactly 1,000 needs no approval.
+22. **Every cassette must be counted** in a reconciliation; a partial count is rejected.
+23. **Approval needs an explicit `X-User`**; an anonymous request cannot approve, so two anonymous
     callers cannot pass as two different people.
-23. **"Falls below 10%"** is a crossing: from 10 or more available notes to fewer than 10. Exactly 10
+24. **"Falls below 10%"** is a crossing: from 10 or more available notes to fewer than 10. Exactly 10
     is not low. Any operation can cause it (a reservation, a reconciliation, an unload); filling an
     empty cassette does not.
-24. **Alerts are "published" by logging**, as the requirement asks; the dispatcher is where a message
+25. **Alerts are "published" by logging**, as the requirement asks; the dispatcher is where a message
     broker or notification service would plug in.
 
 ## Unfinished items and known limitations
