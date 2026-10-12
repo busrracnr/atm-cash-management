@@ -8,7 +8,7 @@ cassette movement ledger and operational reporting.
 > unloading, balances (A1–A7, A12, B1, B2), the movement ledger with its consistency check (B8) and
 > the fewest-notes selection algorithm with its acceptance tests (B3), and the two-step withdrawal
 > with reservations, expiry and idempotent confirmation (A9, A10, B4), daily limits and card number
-> protection (B5).
+> protection (B5), and concurrency safety proven by parallel tests (B6).
 > Sections marked 🚧 are completed as the remaining requirements are implemented.
 
 ## Contents
@@ -245,7 +245,21 @@ last line of defence.
 Every cash-changing operation runs in a transaction that first locks the ATM row
 (`SELECT … FOR UPDATE`), then loads and changes the aggregate. Operations on the same ATM therefore
 run one after another, while different ATMs proceed in parallel; an ATM serves one customer at a
-time, so this costs nothing in practice. 🚧 The parallel-quote test is added with the quote feature.
+time, so this costs nothing in practice.
+
+`ConcurrencyTests` sends truly parallel requests against a real PostgreSQL:
+
+- **25 quotes for 100 TRY at once** on an ATM holding ten 100 TRY notes: exactly ten succeed, the
+  cassette shows ten reserved notes, the ledger holds ten single-note reservations and the
+  consistency check passes.
+- **10 confirmations at once with the same `Idempotency-Key`**: all return the identical response
+  and the notes are paid out once.
+- **6 quotes at once for one card at six ATMs** (300 USD each): exactly three fit in the 1,000 USD
+  limit, thanks to the card lock.
+
+The tests were also run against a deliberately broken build with `FOR UPDATE` removed: 25 of 25
+quotes then succeeded instead of 10 (the same notes reserved again and again) and the duplicate
+confirmations failed with 500. The tests do catch the race they guard against.
 
 ### Note selection algorithm (B3)
 
