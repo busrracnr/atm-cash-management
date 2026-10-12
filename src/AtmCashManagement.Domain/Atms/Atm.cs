@@ -2,6 +2,7 @@ using AtmCashManagement.Domain.Cash;
 using AtmCashManagement.Domain.Common;
 using AtmCashManagement.Domain.Deposits;
 using AtmCashManagement.Domain.Ledger;
+using AtmCashManagement.Domain.Reconciliations;
 using AtmCashManagement.Domain.Withdrawals;
 
 namespace AtmCashManagement.Domain.Atms;
@@ -31,6 +32,9 @@ public sealed class Atm
     public DateTimeOffset CreatedAt { get; private set; }
 
     public IReadOnlyCollection<Cassette> Cassettes => _cassettes;
+
+    /// <summary>Set while a reconciliation with large differences waits for approval; blocks the return to service.</summary>
+    public Guid? PendingReconciliationId { get; private set; }
 
     public static Atm Create(string code, string location, DateTimeOffset createdAt)
     {
@@ -80,6 +84,11 @@ public sealed class Atm
         if (!AtmLifecycle.CanTransition(Status, target))
         {
             throw new DomainException(AtmErrors.InvalidStateTransition(Status, target, AtmLifecycle.AllowedTargets(Status)));
+        }
+
+        if (target == AtmStatus.InService && PendingReconciliationId is { } pending)
+        {
+            throw new DomainException(ReconciliationErrors.AwaitingApproval(pending));
         }
 
         Status = target;
@@ -290,6 +299,40 @@ public sealed class Atm
         }
 
         return new DepositResult(depositId, placements, returned, unrecognizedCount);
+    }
+
+    public void EnsureCanReconcile()
+    {
+        EnsureAllowed(AtmOperation.Reconcile);
+        if (PendingReconciliationId is { } pending)
+        {
+            throw new DomainException(ReconciliationErrors.AwaitingApproval(pending));
+        }
+    }
+
+    /// <summary>Posts the differences of a hand count so the balances match the physical cash.</summary>
+    public void Reconcile(Reconciliation reconciliation, MovementContext context)
+    {
+        EnsureCanReconcile();
+
+        foreach (var line in reconciliation.Lines.Where(l => l.Difference != 0))
+        {
+            _pendingMovements.Add(GetCassette(line.Slot).Record(
+                MovementType.ReconciliationAdjustment, line.Currency, line.Denomination, line.Difference, 0, context));
+        }
+
+        if (reconciliation.Status == ReconciliationStatus.AwaitingApproval)
+        {
+            PendingReconciliationId = reconciliation.Id;
+        }
+    }
+
+    public void ApproveReconciliation(Guid reconciliationId)
+    {
+        if (PendingReconciliationId == reconciliationId)
+        {
+            PendingReconciliationId = null;
+        }
     }
 
     private static void ValidateDeposit(IReadOnlyCollection<DepositNote> notes, int unrecognizedCount)

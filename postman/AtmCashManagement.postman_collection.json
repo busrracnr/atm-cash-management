@@ -28,6 +28,14 @@
     {
       "key": "firstConfirmation",
       "value": ""
+    },
+    {
+      "key": "reconciliationId",
+      "value": ""
+    },
+    {
+      "key": "approver",
+      "value": "ops.bob"
     }
   ],
   "item": [
@@ -394,6 +402,143 @@
       }
     },
     {
+      "name": "09 Reconcile (counted by the first user)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Differences above 1,000 TRY wait for approval', () => {",
+              "  pm.response.to.have.status(201);",
+              "  const rec = pm.response.json();",
+              "  pm.expect(rec.status).to.eql('AWAITING_APPROVAL');",
+              "  pm.expect(rec.totalDifferenceTry).to.be.above(1000);",
+              "  pm.collectionVariables.set('reconciliationId', rec.reconciliationId);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-User",
+            "value": "{{user}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"cassettes\": [\n    { \"slot\": 1, \"notes\": [\n      { \"currency\": \"TRY\", \"denomination\": 500, \"count\": 2 },\n      { \"currency\": \"EUR\", \"denomination\": 50, \"count\": 3 }\n    ] },\n    { \"slot\": 2, \"count\": 52 },\n    { \"slot\": 3, \"count\": 40 },\n    { \"slot\": 4, \"count\": 27 },\n    { \"slot\": 5, \"count\": 19 }\n  ]\n}"
+        },
+        "url": "{{baseUrl}}/api/atms/{{atmId}}/reconciliations"
+      }
+    },
+    {
+      "name": "09a Return to service is blocked until approval",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Rejected with RECONCILIATION_AWAITING_APPROVAL', () => {",
+              "  pm.response.to.have.status(409);",
+              "  pm.expect(pm.response.json().errorCode).to.eql('RECONCILIATION_AWAITING_APPROVAL');",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-User",
+            "value": "{{user}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"status\": \"IN_SERVICE\"\n}"
+        },
+        "url": "{{baseUrl}}/api/atms/{{atmId}}/status"
+      }
+    },
+    {
+      "name": "09b The same user cannot approve",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Rejected with FOUR_EYES_VIOLATION', () => {",
+              "  pm.response.to.have.status(403);",
+              "  pm.expect(pm.response.json().errorCode).to.eql('FOUR_EYES_VIOLATION');",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-User",
+            "value": "{{user}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/reconciliations/{{reconciliationId}}/approve"
+      }
+    },
+    {
+      "name": "09c A second user approves",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Approved by the second user', () => {",
+              "  pm.response.to.have.status(200);",
+              "  const rec = pm.response.json();",
+              "  pm.expect(rec.status).to.eql('APPROVED');",
+              "  pm.expect(rec.approvedBy).to.eql(pm.variables.get('approver'));",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-User",
+            "value": "{{approver}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/reconciliations/{{reconciliationId}}/approve"
+      }
+    },
+    {
       "name": "10 Report: ATM balance",
       "event": [
         {
@@ -401,12 +546,12 @@
           "script": {
             "type": "text/javascript",
             "exec": [
-              "pm.test('Balance shows notes per denomination and totals per currency', () => {",
+              "pm.test('Balance reflects the hand count', () => {",
               "  pm.response.to.have.status(200);",
               "  const total = cur => pm.response.json().totals.find(t => t.currency === cur).amount;",
-              "  pm.expect(total('TRY')).to.eql(7600 - 160 + 1500);",
-              "  pm.expect(total('USD')).to.eql(2000);",
-              "  pm.expect(total('EUR')).to.eql(150);",
+              "  pm.expect(total('TRY')).to.eql(500 * 2 + 100 * 52 + 50 * 40 + 20 * 27);",
+              "  pm.expect(total('USD')).to.eql(100 * 19);",
+              "  pm.expect(total('EUR')).to.eql(50 * 3);",
               "});"
             ]
           }
@@ -433,6 +578,7 @@
               "  pm.expect(count('RESERVATION')).to.eql(2);",
               "  pm.expect(count('WITHDRAWAL')).to.eql(2);",
               "  pm.expect(count('DEPOSIT')).to.eql(3);",
+              "  pm.expect(count('RECONCILIATION_ADJUSTMENT')).to.eql(2);",
               "});"
             ]
           }

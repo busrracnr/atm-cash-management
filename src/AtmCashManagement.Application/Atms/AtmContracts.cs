@@ -40,16 +40,18 @@ public sealed record AtmResponse(
     public static AtmResponse From(Atm atm) => new(atm.Id, atm.Code, atm.Location, atm.Status, atm.CreatedAt);
 }
 
+/// <param name="PendingReconciliationId">Reconciliation waiting for a second user's approval; the ATM cannot return to service until then.</param>
 public sealed record AtmDetailsResponse(
     Guid Id,
     string Code,
     string Location,
     AtmStatus Status,
     DateTimeOffset CreatedAt,
+    Guid? PendingReconciliationId,
     IReadOnlyList<CassetteResponse> Cassettes)
 {
     public static AtmDetailsResponse From(Atm atm) =>
-        new(atm.Id, atm.Code, atm.Location, atm.Status, atm.CreatedAt,
+        new(atm.Id, atm.Code, atm.Location, atm.Status, atm.CreatedAt, atm.PendingReconciliationId,
             atm.Cassettes.OrderBy(c => c.Slot).Select(CassetteResponse.From).ToList());
 }
 

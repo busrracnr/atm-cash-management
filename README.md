@@ -8,7 +8,8 @@ cassette movement ledger and operational reporting.
 > unloading, balances (A1–A7, A12, B1, B2), the movement ledger with its consistency check (B8) and
 > the fewest-notes selection algorithm with its acceptance tests (B3), and the two-step withdrawal
 > with reservations, expiry and idempotent confirmation (A9, A10, B4), daily limits and card number
-> protection (B5), concurrency safety proven by parallel tests (B6) and deposits (A11, B7).
+> protection (B5), concurrency safety proven by parallel tests (B6), deposits (A11, B7) and
+> reconciliation with four-eyes approval and exchange rates (A8, B9).
 > Sections marked 🚧 are completed as the remaining requirements are implemented.
 
 ## Contents
@@ -113,6 +114,11 @@ numbered after the order in the assignment; the error examples at the end show t
 | POST   | `/api/withdrawal-quotes/{id}/confirm`  | Withdrawal step 2 (requires `Idempotency-Key`)               |
 | POST   | `/api/withdrawal-quotes/{id}/cancel`   | Cancel a quote and release its notes                         |
 | POST   | `/api/atms/{id}/deposits`              | Deposit: where each note went, what was returned             |
+| POST   | `/api/atms/{id}/reconciliations`       | Hand count; differences posted, large ones await approval    |
+| GET    | `/api/reconciliations/{id}`            | Reconciliation with system figures, counts and differences   |
+| POST   | `/api/reconciliations/{id}/approve`    | Four-eyes approval by a different `X-User`                   |
+| GET    | `/api/exchange-rates`                  | TRY value of each currency                                   |
+| PUT    | `/api/exchange-rates/{currency}`       | Update a rate                                                |
 
 Every request may carry an `X-User` header; it is recorded on ledger entries (default `anonymous`).
 
@@ -332,7 +338,25 @@ sits in two cassettes, the one with the higher fill ratio pays first (B2).
 - **Parallel requests for one card.** The ATM lock does not cover two ATMs, so the quote also takes a
   transaction-scoped PostgreSQL advisory lock on the card hash. It is always taken after the ATM lock;
   a fixed order means no deadlocks.
-### 🚧 Reconciliation with four-eyes approval (B9)
+### Reconciliation with four-eyes approval (A8, B9)
+
+- **Count.** Every cassette is counted: a single number for a recycling cassette, notes per currency
+  and denomination for the deposit cassette. Each note type gets a line with the system figure, the
+  count and the difference valued in TRY through the exchange-rate table (seeded with illustrative
+  rates and updatable through the API).
+- **Posting.** Following the order of the requirement, differences are posted immediately as
+  `RECONCILIATION_ADJUSTMENT` entries, so the books always match the physical cash.
+- **Threshold.** When the total of the *absolute* TRY differences exceeds 1,000, the reconciliation is
+  `AWAITING_APPROVAL` and the ATM records it as pending. The aggregate itself refuses
+  `IN_SERVICE` while an approval is pending, and no new reconciliation can start.
+- **Four eyes.** Approval needs an identified `X-User` different from the one who counted
+  (case-insensitive), otherwise `403 FOUR_EYES_VIOLATION`. This is the same maker/checker split as
+  "Girişçi/Onaycı" in Turkish banking.
+- **Alternative considered.** Holding the adjustments until approval (books unchanged meanwhile)
+  would also be valid. Posting first was chosen because the requirement lists the movement before the
+  approval step, and because the ATM stays out of service until approval anyway, so no customer ever
+  meets an unapproved figure. A wrong count is corrected by a new reconciliation.
+
 ### 🚧 Reporting, low-cash alerts and the outbox (B10)
 
 ## Assumptions
@@ -375,6 +399,12 @@ sits in two cassettes, the one with the higher fill ratio pays first (B2).
     "TRY 100 × 5 → slot 2") rather than one line per physical note.
 18. **A deposit may mix currencies**, since the deposit cassette accepts any currency; each recycling
     cassette still only takes its own currency and denomination.
+19. **"Total TRY value of the differences"** is the sum of absolute values: a 600 TRY surplus in one
+    cassette and a 600 TRY shortage in another make 1,200, not zero.
+20. **"Exceeds TRY 1,000"** means strictly more than 1,000; exactly 1,000 needs no approval.
+21. **Every cassette must be counted** in a reconciliation; a partial count is rejected.
+22. **Approval needs an explicit `X-User`**; an anonymous request cannot approve, so two anonymous
+    callers cannot pass as two different people.
 
 ## Unfinished items and known limitations
 

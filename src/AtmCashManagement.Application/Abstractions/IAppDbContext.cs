@@ -1,6 +1,8 @@
 using AtmCashManagement.Application.Idempotency;
 using AtmCashManagement.Domain.Atms;
+using AtmCashManagement.Domain.Cash;
 using AtmCashManagement.Domain.Ledger;
+using AtmCashManagement.Domain.Reconciliations;
 using AtmCashManagement.Domain.Withdrawals;
 
 using Microsoft.EntityFrameworkCore;
@@ -21,6 +23,10 @@ public interface IAppDbContext
     DbSet<WithdrawalQuote> WithdrawalQuotes { get; }
 
     DbSet<IdempotencyRecord> IdempotencyRecords { get; }
+
+    DbSet<Reconciliation> Reconciliations { get; }
+
+    DbSet<ExchangeRate> ExchangeRates { get; }
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }

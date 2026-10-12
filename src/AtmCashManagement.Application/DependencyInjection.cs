@@ -1,6 +1,8 @@
 using AtmCashManagement.Application.Atms;
 using AtmCashManagement.Application.Cash;
 using AtmCashManagement.Application.Deposits;
+using AtmCashManagement.Application.ExchangeRates;
+using AtmCashManagement.Application.Reconciliations;
 using AtmCashManagement.Application.Ledger;
 using AtmCashManagement.Application.Withdrawals;
 
@@ -18,6 +20,8 @@ public static class DependencyInjection
         services.AddScoped<OpenQuotes>();
         services.AddScoped<WithdrawalService>();
         services.AddScoped<DepositService>();
+        services.AddScoped<ReconciliationService>();
+        services.AddScoped<ExchangeRateService>();
 
         return services;
     }

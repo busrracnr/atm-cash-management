@@ -3,6 +3,8 @@ using System.Text.Json.Nodes;
 using AtmCashManagement.Application.Atms;
 using AtmCashManagement.Application.Cash;
 using AtmCashManagement.Application.Deposits;
+using AtmCashManagement.Application.ExchangeRates;
+using AtmCashManagement.Application.Reconciliations;
 using AtmCashManagement.Application.Withdrawals;
 
 using Microsoft.AspNetCore.OpenApi;
@@ -60,6 +62,20 @@ internal sealed class RequestExamplesSchemaTransformer : IOpenApiSchemaTransform
               ],
               "unrecognizedCount": 1
             }
+            """,
+        [typeof(ReconcileRequest)] = """
+            {
+              "cassettes": [
+                { "slot": 1, "notes": [] },
+                { "slot": 2, "count": 48 },
+                { "slot": 3, "count": 40 },
+                { "slot": 4, "count": 30 },
+                { "slot": 5, "count": 19 }
+              ]
+            }
+            """,
+        [typeof(UpdateExchangeRateRequest)] = """
+            { "rateToTry": 42.50 }
             """,
     };
 

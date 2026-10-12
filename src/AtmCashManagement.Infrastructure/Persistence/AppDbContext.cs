@@ -1,7 +1,9 @@
 using AtmCashManagement.Application.Abstractions;
 using AtmCashManagement.Application.Idempotency;
 using AtmCashManagement.Domain.Atms;
+using AtmCashManagement.Domain.Cash;
 using AtmCashManagement.Domain.Ledger;
+using AtmCashManagement.Domain.Reconciliations;
 using AtmCashManagement.Domain.Withdrawals;
 
 using Microsoft.EntityFrameworkCore;
@@ -21,6 +23,10 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<WithdrawalQuote> WithdrawalQuotes => Set<WithdrawalQuote>();
 
     public DbSet<IdempotencyRecord> IdempotencyRecords => Set<IdempotencyRecord>();
+
+    public DbSet<Reconciliation> Reconciliations => Set<Reconciliation>();
+
+    public DbSet<ExchangeRate> ExchangeRates => Set<ExchangeRate>();
 
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
     {
