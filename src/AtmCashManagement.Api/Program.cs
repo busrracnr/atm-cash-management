@@ -1,10 +1,10 @@
-using AtmCashManagement.Api;
 using AtmCashManagement.Api.Errors;
 using AtmCashManagement.Api.Health;
 using AtmCashManagement.Api.OpenApi;
 using AtmCashManagement.Api.Users;
 using AtmCashManagement.Application;
 using AtmCashManagement.Application.Abstractions;
+using AtmCashManagement.Application.Common;
 using AtmCashManagement.Infrastructure;
 using AtmCashManagement.Infrastructure.Persistence;
 
@@ -38,6 +38,9 @@ builder.Services.AddOpenApi(options =>
 });
 
 var app = builder.Build();
+
+// Fail at startup, not on the first withdrawal, when the card hashing key is missing.
+_ = app.Services.GetRequiredService<ICardNumberHasher>();
 
 app.UseExceptionHandler();
 app.UseStatusCodePages();

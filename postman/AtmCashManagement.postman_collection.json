@@ -5,9 +5,30 @@
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
-    { "key": "baseUrl", "value": "http://localhost:8088" },
-    { "key": "user", "value": "ops.alice" },
-    { "key": "atmId", "value": "" }
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8088"
+    },
+    {
+      "key": "user",
+      "value": "ops.alice"
+    },
+    {
+      "key": "atmId",
+      "value": ""
+    },
+    {
+      "key": "quoteId",
+      "value": ""
+    },
+    {
+      "key": "idempotencyKey",
+      "value": ""
+    },
+    {
+      "key": "firstConfirmation",
+      "value": ""
+    }
   ],
   "item": [
     {
@@ -52,8 +73,14 @@
       "request": {
         "method": "POST",
         "header": [
-          { "key": "Content-Type", "value": "application/json" },
-          { "key": "X-User", "value": "{{user}}" }
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-User",
+            "value": "{{user}}"
+          }
         ],
         "body": {
           "mode": "raw",
@@ -83,8 +110,14 @@
       "request": {
         "method": "PUT",
         "header": [
-          { "key": "Content-Type", "value": "application/json" },
-          { "key": "X-User", "value": "{{user}}" }
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-User",
+            "value": "{{user}}"
+          }
         ],
         "body": {
           "mode": "raw",
@@ -114,8 +147,14 @@
       "request": {
         "method": "POST",
         "header": [
-          { "key": "Content-Type", "value": "application/json" },
-          { "key": "X-User", "value": "{{user}}" }
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-User",
+            "value": "{{user}}"
+          }
         ],
         "body": {
           "mode": "raw",
@@ -143,14 +182,140 @@
       "request": {
         "method": "PUT",
         "header": [
-          { "key": "Content-Type", "value": "application/json" },
-          { "key": "X-User", "value": "{{user}}" }
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-User",
+            "value": "{{user}}"
+          }
         ],
         "body": {
           "mode": "raw",
           "raw": "{\n  \"status\": \"IN_SERVICE\"\n}"
         },
         "url": "{{baseUrl}}/api/atms/{{atmId}}/status"
+      }
+    },
+    {
+      "name": "05 Request withdrawal quote",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('160 TRY can be paid exactly; notes are reserved', () => {",
+              "  pm.response.to.have.status(201);",
+              "  const quote = pm.response.json();",
+              "  pm.expect(quote.status).to.eql('OPEN');",
+              "  pm.expect(quote.exact.amount).to.eql(160);",
+              "  pm.collectionVariables.set('quoteId', quote.quoteId);",
+              "  pm.collectionVariables.set('idempotencyKey', pm.variables.replaceIn('{{$guid}}'));",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-User",
+            "value": "{{user}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"cardNumber\": \"4111 1111 1111 1111\",\n  \"currency\": \"TRY\",\n  \"amount\": 160\n}"
+        },
+        "url": "{{baseUrl}}/api/atms/{{atmId}}/withdrawal-quotes"
+      }
+    },
+    {
+      "name": "06 Confirm withdrawal",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('The quote is paid out', () => {",
+              "  pm.response.to.have.status(200);",
+              "  const paid = pm.response.json();",
+              "  pm.expect(paid.status).to.eql('CONFIRMED');",
+              "  pm.expect(paid.amount).to.eql(160);",
+              "  pm.collectionVariables.set('firstConfirmation', pm.response.text());",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-User",
+            "value": "{{user}}"
+          },
+          {
+            "key": "Idempotency-Key",
+            "value": "{{idempotencyKey}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"option\": \"EXACT\"\n}"
+        },
+        "url": "{{baseUrl}}/api/withdrawal-quotes/{{quoteId}}/confirm"
+      }
+    },
+    {
+      "name": "06b Confirm again with the same Idempotency-Key",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Same result, nothing paid twice', () => {",
+              "  pm.response.to.have.status(200);",
+              "  pm.expect(pm.response.text()).to.eql(pm.collectionVariables.get('firstConfirmation'));",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-User",
+            "value": "{{user}}"
+          },
+          {
+            "key": "Idempotency-Key",
+            "value": "{{idempotencyKey}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"option\": \"EXACT\"\n}"
+        },
+        "url": "{{baseUrl}}/api/withdrawal-quotes/{{quoteId}}/confirm"
       }
     },
     {
@@ -172,8 +337,14 @@
       "request": {
         "method": "PUT",
         "header": [
-          { "key": "Content-Type", "value": "application/json" },
-          { "key": "X-User", "value": "{{user}}" }
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-User",
+            "value": "{{user}}"
+          }
         ],
         "body": {
           "mode": "raw",
@@ -193,7 +364,7 @@
               "pm.test('Balance shows notes per denomination and totals per currency', () => {",
               "  pm.response.to.have.status(200);",
               "  const balance = pm.response.json();",
-              "  pm.expect(balance.totals.find(t => t.currency === 'TRY').amount).to.eql(7600);",
+              "  pm.expect(balance.totals.find(t => t.currency === 'TRY').amount).to.eql(7600 - 160);",
               "  pm.expect(balance.totals.find(t => t.currency === 'USD').amount).to.eql(2000);",
               "});"
             ]
@@ -213,10 +384,12 @@
           "script": {
             "type": "text/javascript",
             "exec": [
-              "pm.test('Every load is in the ledger', () => {",
+              "pm.test('Loads, the reservation and the withdrawal are in the ledger', () => {",
               "  pm.response.to.have.status(200);",
-              "  const loads = pm.response.json().filter(m => m.type === 'LOAD');",
-              "  pm.expect(loads).to.have.lengthOf(4);",
+              "  const types = pm.response.json().map(m => m.type);",
+              "  pm.expect(types.filter(t => t === 'LOAD')).to.have.lengthOf(4);",
+              "  pm.expect(types.filter(t => t === 'RESERVATION')).to.have.lengthOf(2);",
+              "  pm.expect(types.filter(t => t === 'WITHDRAWAL')).to.have.lengthOf(2);",
               "});"
             ]
           }
@@ -269,7 +442,12 @@
           ],
           "request": {
             "method": "PUT",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"status\": \"LOADED\"\n}"
@@ -295,7 +473,12 @@
           ],
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"items\": [ { \"slot\": 1, \"count\": 10 } ]\n}"
@@ -321,12 +504,48 @@
           ],
           "request": {
             "method": "PUT",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"cassettes\": [\n    { \"slot\": 1, \"type\": \"DEPOSIT\" },\n    { \"slot\": 2, \"type\": \"RECYCLING\", \"currency\": \"TRY\", \"denomination\": 100 },\n    { \"slot\": 3, \"type\": \"RECYCLING\", \"currency\": \"TRY\", \"denomination\": 50 },\n    { \"slot\": 4, \"type\": \"RECYCLING\", \"currency\": \"TRY\", \"denomination\": 20 },\n    { \"slot\": 5, \"type\": \"RECYCLING\", \"currency\": \"TRY\", \"denomination\": 500 }\n  ]\n}"
             },
             "url": "{{baseUrl}}/api/atms/{{atmId}}/cassettes"
+          }
+        },
+        {
+          "name": "Confirming without an Idempotency-Key",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Rejected as a malformed request', () => {",
+                  "  pm.response.to.have.status(400);",
+                  "  pm.expect(pm.response.json().errorCode).to.eql('VALIDATION_FAILED');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"option\": \"EXACT\"\n}"
+            },
+            "url": "{{baseUrl}}/api/withdrawal-quotes/{{quoteId}}/confirm"
           }
         }
       ]

@@ -1,6 +1,7 @@
 using AtmCashManagement.Domain.Cash;
 using AtmCashManagement.Domain.Common;
 using AtmCashManagement.Domain.Ledger;
+using AtmCashManagement.Domain.Withdrawals;
 
 namespace AtmCashManagement.Domain.Atms;
 
@@ -191,7 +192,65 @@ public sealed class Atm
         }
     }
 
-    private void EnsureAllowed(AtmOperation operation)
+    /// <summary>Holds notes for a withdrawal quote; they stay in the cassette but can no longer be offered.</summary>
+    public void ReserveNotes(IReadOnlyCollection<CassetteAllocation> notes, MovementContext context)
+    {
+        EnsureAllowed(AtmOperation.Withdraw);
+
+        var reservations = notes.Select(n => (Notes: n, Cassette: GetRecyclingCassette(n))).ToList();
+        foreach (var (allocation, cassette) in reservations)
+        {
+            // The quote was computed from this availability under the same lock; a shortfall is a bug.
+            if (allocation.Count > cassette.AvailableCount)
+            {
+                throw new InvalidOperationException(
+                    $"Cannot reserve {allocation.Count} notes in slot {allocation.Slot}; {cassette.AvailableCount} available.");
+            }
+        }
+
+        foreach (var (allocation, cassette) in reservations)
+        {
+            _pendingMovements.Add(cassette.Record(
+                MovementType.Reservation, cassette.Currency!.Value, allocation.Denomination, 0, allocation.Count, context));
+        }
+    }
+
+    /// <summary>Pays out reserved notes: they leave the cassette and their reservation is consumed.</summary>
+    public void Dispense(IReadOnlyCollection<CassetteAllocation> notes, MovementContext context)
+    {
+        EnsureAllowed(AtmOperation.Withdraw);
+
+        foreach (var allocation in notes)
+        {
+            var cassette = GetRecyclingCassette(allocation);
+            _pendingMovements.Add(cassette.Record(
+                MovementType.Withdrawal, cassette.Currency!.Value, allocation.Denomination, -allocation.Count, -allocation.Count, context));
+        }
+    }
+
+    /// <summary>Gives reserved notes back to the pool; allowed in any state (e.g. when switching to maintenance).</summary>
+    public void ReleaseReservation(IReadOnlyCollection<CassetteAllocation> notes, MovementContext context)
+    {
+        foreach (var allocation in notes)
+        {
+            var cassette = GetRecyclingCassette(allocation);
+            _pendingMovements.Add(cassette.Record(
+                MovementType.ReservationRelease, cassette.Currency!.Value, allocation.Denomination, 0, -allocation.Count, context));
+        }
+    }
+
+    private Cassette GetRecyclingCassette(CassetteAllocation allocation)
+    {
+        var cassette = GetCassette(allocation.Slot);
+        if (cassette.Type != CassetteType.Recycling || cassette.Denomination != allocation.Denomination)
+        {
+            throw new InvalidOperationException($"Slot {allocation.Slot} does not hold {allocation.Denomination} notes.");
+        }
+
+        return cassette;
+    }
+
+    public void EnsureAllowed(AtmOperation operation)
     {
         if (!AtmLifecycle.IsAllowed(operation, Status))
         {

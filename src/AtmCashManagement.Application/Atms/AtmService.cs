@@ -1,4 +1,5 @@
 using AtmCashManagement.Application.Abstractions;
+using AtmCashManagement.Application.Withdrawals;
 using AtmCashManagement.Domain.Atms;
 using AtmCashManagement.Domain.Common;
 
@@ -6,7 +7,13 @@ using Microsoft.EntityFrameworkCore;
 
 namespace AtmCashManagement.Application.Atms;
 
-public sealed class AtmService(IAppDbContext db, IUnitOfWork unitOfWork, IAtmRepository atms, TimeProvider clock)
+public sealed class AtmService(
+    IAppDbContext db,
+    IUnitOfWork unitOfWork,
+    IAtmRepository atms,
+    OpenQuotes openQuotes,
+    ICurrentUser currentUser,
+    TimeProvider clock)
 {
     public async Task<AtmResponse> CreateAsync(CreateAtmRequest request, CancellationToken cancellationToken)
     {
@@ -56,6 +63,13 @@ public sealed class AtmService(IAppDbContext db, IUnitOfWork unitOfWork, IAtmRep
         {
             var atm = await atms.GetForUpdateAsync(atmId, ct);
             atm.ChangeStatus(request.Status!.Value);
+
+            // Leaving service cancels open quotes so their notes are not held while the ATM is serviced.
+            if (atm.Status == AtmStatus.Maintenance)
+            {
+                await openQuotes.CancelAllAsync(atm, currentUser.Name, clock.GetUtcNow(), ct);
+            }
+
             return AtmDetailsResponse.From(atm);
         }, cancellationToken);
 }

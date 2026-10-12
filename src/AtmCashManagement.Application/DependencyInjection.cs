@@ -1,6 +1,7 @@
 using AtmCashManagement.Application.Atms;
 using AtmCashManagement.Application.Cash;
 using AtmCashManagement.Application.Ledger;
+using AtmCashManagement.Application.Withdrawals;
 
 using Microsoft.Extensions.DependencyInjection;
 
@@ -13,6 +14,8 @@ public static class DependencyInjection
         services.AddScoped<AtmService>();
         services.AddScoped<CashService>();
         services.AddScoped<LedgerService>();
+        services.AddScoped<OpenQuotes>();
+        services.AddScoped<WithdrawalService>();
 
         return services;
     }

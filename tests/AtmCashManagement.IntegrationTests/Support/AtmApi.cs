@@ -50,6 +50,37 @@ internal static class AtmApi
         return atmId;
     }
 
+    /// <summary>Standard cassettes and load, put in service: ready for withdrawals.</summary>
+    public static async Task<Guid> CreateInServiceAtmAsync(this HttpClient client)
+    {
+        var atmId = await client.CreateLoadedAtmAsync();
+        (await client.ChangeStatusAsync(atmId, "IN_SERVICE")).EnsureSuccessStatusCode();
+        return atmId;
+    }
+
+    public const string TestCard = "4111 1111 1111 1111";
+
+    public static Task<HttpResponseMessage> RequestQuoteAsync(
+        this HttpClient client, Guid atmId, int amount, string currency = "TRY", string card = TestCard) =>
+        client.PostAsJsonAsync($"/api/atms/{atmId}/withdrawal-quotes", new { cardNumber = card, currency, amount }, Ct);
+
+    public static async Task<Guid> CreateQuoteAsync(this HttpClient client, Guid atmId, int amount, string currency = "TRY", string card = TestCard)
+    {
+        var response = await client.RequestQuoteAsync(atmId, amount, currency, card);
+        response.EnsureSuccessStatusCode();
+        return (await response.ReadJsonAsync()).GetProperty("quoteId").GetGuid();
+    }
+
+    public static Task<HttpResponseMessage> ConfirmQuoteAsync(this HttpClient client, Guid quoteId, string idempotencyKey, string? option = null)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Post, $"/api/withdrawal-quotes/{quoteId}/confirm")
+        {
+            Content = JsonContent.Create(new { option }),
+        };
+        request.Headers.Add("Idempotency-Key", idempotencyKey);
+        return client.SendAsync(request, Ct);
+    }
+
     public static Task<HttpResponseMessage> ConfigureCassettesAsync(this HttpClient client, Guid atmId, object body) =>
         client.PutAsJsonAsync($"/api/atms/{atmId}/cassettes", body, Ct);
 

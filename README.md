@@ -6,7 +6,8 @@ cassette movement ledger and operational reporting.
 
 > **Status — in progress.** Done: ATM registration, cassette configuration, lifecycle, cash loading and
 > unloading, balances (A1–A7, A12, B1, B2), the movement ledger with its consistency check (B8) and
-> the fewest-notes selection algorithm with its acceptance tests (B3).
+> the fewest-notes selection algorithm with its acceptance tests (B3), and the two-step withdrawal
+> with reservations, expiry and idempotent confirmation (A9, A10, B4).
 > Sections marked 🚧 are completed as the remaining requirements are implemented.
 
 ## Contents
@@ -106,6 +107,10 @@ numbered after the order in the assignment; the error examples at the end show t
 | GET    | `/api/atms/{id}/balance`               | Notes per denomination and total balance (requirement A12)   |
 | GET    | `/api/atms/{id}/movements`             | Cassette movement ledger                                     |
 | GET    | `/api/ledger/consistency?atmId=`       | Stored balances vs. balances recomputed from the ledger      |
+| POST   | `/api/atms/{id}/withdrawal-quotes`     | Withdrawal step 1: breakdown or alternatives, notes reserved |
+| GET    | `/api/withdrawal-quotes/{id}`          | Quote and its status                                         |
+| POST   | `/api/withdrawal-quotes/{id}/confirm`  | Withdrawal step 2 (requires `Idempotency-Key`)               |
+| POST   | `/api/withdrawal-quotes/{id}/cancel`   | Cancel a quote and release its notes                         |
 
 Every request may carry an `X-User` header; it is recorded on ledger entries (default `anonymous`).
 
@@ -267,8 +272,33 @@ the whole stock, an empty stock, the upper cap) have their own tests.
 `CassetteAllocator` then maps the breakdown onto cassettes. When the same currency and denomination
 sits in two cassettes, the one with the higher fill ratio pays first (B2).
 
-### 🚧 Two-step withdrawal, reservations and idempotency (B4)
-### 🚧 Daily limit and card number protection (B5)
+### Two-step withdrawal, reservations and idempotency (B4)
+
+- **Quote.** The breakdown (or the two alternatives) is computed from the *unreserved* notes, mapped
+  onto cassettes and reserved with `RESERVATION` entries. When two alternatives are offered, each
+  cassette reserves the larger of the two needs: enough for whichever the customer picks, without
+  holding both. A quote is valid for 60 seconds.
+- **Confirm.** The chosen option is paid out (`WITHDRAWAL` entries consume the reservation) and the
+  unused part is released (`RESERVATION_RELEASE`). EXACT is the default when it was offered.
+- **Cancel** releases the whole reservation. Switching the ATM to MAINTENANCE cancels its open quotes.
+- **Expiry.** A hosted service sweeps expired quotes every 5 seconds. In addition, a new quote first
+  expires the ATM's overdue quotes under the same lock, so released notes can be offered again at
+  once even between sweeps. From its 60th second a quote reads as EXPIRED and cannot be confirmed.
+- **Idempotency.** The confirmation response is stored together with the `Idempotency-Key` in the
+  same transaction as the payout, and a repeated request returns the stored response verbatim. The
+  key is looked up again after the ATM lock is acquired, so two concurrent duplicates cannot both
+  pay; the primary key on (scope, key) is the last line of defence. Reusing a key for a different
+  request returns `422 IDEMPOTENCY_KEY_REUSED`.
+
+### Daily limit and card number protection (B5)
+
+- **Card numbers** are validated (12–19 digits, Luhn) and stored only as an HMAC-SHA256 under a
+  secret key kept outside the database (`Security:CardHashKey`). A plain SHA-256 would not be
+  enough: with a known issuer prefix and the Luhn digit, the remaining digits can be brute-forced.
+  The key is a development value in `docker-compose.yml`; a real deployment injects it from a secret
+  store. An integration test reads the stored value and checks it is the keyed hash, not the number
+  or its plain hash.
+- 🚧 Daily limit enforcement follows.
 ### 🚧 Reconciliation with four-eyes approval (B9)
 ### 🚧 Reporting, low-cash alerts and the outbox (B10)
 
@@ -297,6 +327,11 @@ sits in two cassettes, the one with the higher fill ratio pays first (B2).
 10. **"Higher fill ratio first"** uses the unreserved notes over the capacity. The fuller cassette
     pays until it is empty and the next one continues; dispensing note by note alternately from both
     was considered and not chosen, as the requirement describes an order, not balancing.
+11. **Exact payment comes alone.** When the request can be paid exactly, no alternatives are offered.
+12. **Idempotency stores successes.** Only successful confirmations are stored. A failed attempt
+    (e.g. `QUOTE_EXPIRED`) can be retried with the same key and is evaluated again.
+13. **Maintenance cancels quotes.** A customer cannot confirm a withdrawal at an ATM that has been
+    taken out of service, so open quotes are cancelled and their notes released.
 
 ## Unfinished items and known limitations
 

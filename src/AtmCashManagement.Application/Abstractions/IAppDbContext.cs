@@ -1,5 +1,7 @@
+using AtmCashManagement.Application.Idempotency;
 using AtmCashManagement.Domain.Atms;
 using AtmCashManagement.Domain.Ledger;
+using AtmCashManagement.Domain.Withdrawals;
 
 using Microsoft.EntityFrameworkCore;
 
@@ -15,6 +17,10 @@ public interface IAppDbContext
     DbSet<CassetteBalance> CassetteBalances { get; }
 
     DbSet<CassetteMovement> CassetteMovements { get; }
+
+    DbSet<WithdrawalQuote> WithdrawalQuotes { get; }
+
+    DbSet<IdempotencyRecord> IdempotencyRecords { get; }
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }

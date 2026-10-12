@@ -2,6 +2,7 @@ using System.Text.Json.Nodes;
 
 using AtmCashManagement.Application.Atms;
 using AtmCashManagement.Application.Cash;
+using AtmCashManagement.Application.Withdrawals;
 
 using Microsoft.AspNetCore.OpenApi;
 using Microsoft.OpenApi;
@@ -42,6 +43,12 @@ internal sealed class RequestExamplesSchemaTransformer : IOpenApiSchemaTransform
             """,
         [typeof(ChangeAtmStatusRequest)] = """
             { "status": "IN_SERVICE" }
+            """,
+        [typeof(CreateWithdrawalQuoteRequest)] = """
+            { "cardNumber": "4111 1111 1111 1111", "currency": "TRY", "amount": 160 }
+            """,
+        [typeof(ConfirmWithdrawalQuoteRequest)] = """
+            { "option": "EXACT" }
             """,
     };
 

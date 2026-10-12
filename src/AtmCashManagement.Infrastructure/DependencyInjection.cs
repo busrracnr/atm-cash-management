@@ -1,5 +1,7 @@
 using AtmCashManagement.Application.Abstractions;
 using AtmCashManagement.Infrastructure.Persistence;
+using AtmCashManagement.Infrastructure.Security;
+using AtmCashManagement.Infrastructure.Withdrawals;
 
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -25,7 +27,11 @@ public static class DependencyInjection
         services.AddScoped<IUnitOfWork, EfUnitOfWork>();
         services.AddScoped<IAtmRepository, AtmRepository>();
 
+        services.AddSingleton<ICardNumberHasher>(serviceProvider =>
+            new HmacCardNumberHasher(serviceProvider.GetRequiredService<IConfiguration>()[HmacCardNumberHasher.KeySetting]));
+
         services.AddSingleton(TimeProvider.System);
+        services.AddHostedService<QuoteExpiryService>();
 
         services.AddHealthChecks().AddDbContextCheck<AppDbContext>("database");
 
