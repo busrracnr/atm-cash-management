@@ -40,6 +40,19 @@ public static class WithdrawalErrors
             ErrorType.Validation,
             new Dictionary<string, object?> { ["offeredOptions"] = offered.Select(o => o.ToApiName()).ToArray() });
 
+    public static Error DailyLimitExceeded(Currency currency, int dailyLimit, int usedToday, int requested) =>
+        new("DAILY_LIMIT_EXCEEDED",
+            $"{requested} {currency} exceeds the card's daily limit of {dailyLimit} {currency}: " +
+            $"{usedToday} {currency} is already withdrawn or reserved today, {dailyLimit - usedToday} {currency} remains.",
+            ErrorType.Validation,
+            new Dictionary<string, object?>
+            {
+                ["currency"] = currency.ToApiName(),
+                ["dailyLimit"] = dailyLimit,
+                ["usedToday"] = usedToday,
+                ["remaining"] = dailyLimit - usedToday,
+            });
+
     public static Error InvalidCardNumber() =>
         new("CARD_NUMBER_INVALID", "Card number must be 12 to 19 digits and pass the Luhn check.", ErrorType.Validation);
 }

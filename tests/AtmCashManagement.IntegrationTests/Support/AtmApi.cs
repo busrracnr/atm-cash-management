@@ -60,6 +60,15 @@ internal static class AtmApi
 
     public const string TestCard = "4111 1111 1111 1111";
 
+    /// <summary>A fresh Luhn-valid card number, so a test's daily usage is not shared with other tests.</summary>
+    public static string NewCardNumber()
+    {
+        var digits = Enumerable.Range(0, 15).Select(i => i == 0 ? 4 : Random.Shared.Next(10)).ToList();
+        var sum = digits.Select((d, i) => i % 2 == 0 ? (d * 2 > 9 ? (d * 2) - 9 : d * 2) : d).Sum();
+        digits.Add((10 - (sum % 10)) % 10);
+        return string.Concat(digits);
+    }
+
     public static Task<HttpResponseMessage> RequestQuoteAsync(
         this HttpClient client, Guid atmId, int amount, string currency = "TRY", string card = TestCard) =>
         client.PostAsJsonAsync($"/api/atms/{atmId}/withdrawal-quotes", new { cardNumber = card, currency, amount }, Ct);

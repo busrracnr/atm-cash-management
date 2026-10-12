@@ -31,6 +31,9 @@ public sealed record WithdrawalQuoteResponse(
     NoteOfferResponse? Upper,
     DateTimeOffset ExpiresAt)
 {
+    /// <summary>Daily limit left for this card and currency after this quote; returned when the quote is created.</summary>
+    public int? RemainingDailyLimit { get; init; }
+
     public static WithdrawalQuoteResponse From(WithdrawalQuote quote, DateTimeOffset now) =>
         new(quote.Id, quote.AtmId, quote.EffectiveStatus(now), quote.Currency, quote.RequestedAmount,
             Offer(quote, QuoteOption.Exact), Offer(quote, QuoteOption.Lower), Offer(quote, QuoteOption.Upper), quote.ExpiresAt);

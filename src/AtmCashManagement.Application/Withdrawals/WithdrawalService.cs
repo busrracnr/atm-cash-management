@@ -6,6 +6,7 @@ using AtmCashManagement.Application.Abstractions;
 using AtmCashManagement.Application.Common;
 using AtmCashManagement.Application.Idempotency;
 using AtmCashManagement.Domain.Atms;
+using AtmCashManagement.Domain.Cash;
 using AtmCashManagement.Domain.Common;
 using AtmCashManagement.Domain.Ledger;
 using AtmCashManagement.Domain.Withdrawals;
@@ -19,6 +20,7 @@ public sealed class WithdrawalService(
     IAppDbContext db,
     IUnitOfWork unitOfWork,
     IAtmRepository atms,
+    ICardLock cardLock,
     OpenQuotes openQuotes,
     ICardNumberHasher cardNumberHasher,
     ICurrentUser currentUser,
@@ -41,12 +43,24 @@ public sealed class WithdrawalService(
             var now = clock.GetUtcNow();
             await openQuotes.ExpireDueAsync(atm, now, ct);
 
-            var selection = NoteSelector.Select(atm.AvailableNotes(currency), request.Amount);
+            await cardLock.AcquireAsync(cardHash, ct);
+            var dailyLimit = DailyWithdrawalLimits.For(currency);
+            var usedToday = await UsedTodayAsync(cardHash, currency, now, ct);
+            if (request.Amount > dailyLimit - usedToday)
+            {
+                throw new DomainException(WithdrawalErrors.DailyLimitExceeded(currency, dailyLimit, usedToday, request.Amount));
+            }
+
+            // The upper alternative is offered only if it still fits within the remaining daily limit.
+            var selection = NoteSelector.Select(atm.AvailableNotes(currency), request.Amount, maxUpperAmount: dailyLimit - usedToday);
             var quote = WithdrawalQuote.Open(atm, cardHash, currency, selection, now);
             atm.ReserveNotes(quote.Reservation(), new MovementContext(currentUser.Name, now, quote.Id));
             db.WithdrawalQuotes.Add(quote);
 
-            return WithdrawalQuoteResponse.From(quote, now);
+            return WithdrawalQuoteResponse.From(quote, now) with
+            {
+                RemainingDailyLimit = dailyLimit - usedToday - quote.LimitAmount,
+            };
         }, cancellationToken);
     }
 
@@ -126,6 +140,16 @@ public sealed class WithdrawalService(
         }
 
         return expired;
+    }
+
+    /// <summary>Confirmed amounts plus amounts still reserved by open, unexpired quotes, for the card's business day.</summary>
+    private Task<int> UsedTodayAsync(string cardHash, Currency currency, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        var today = BusinessDay.Of(now);
+        return db.WithdrawalQuotes
+            .Where(q => q.CardHash == cardHash && q.Currency == currency && q.BusinessDate == today)
+            .Where(q => q.Status == QuoteStatus.Confirmed || (q.Status == QuoteStatus.Open && q.ExpiresAt > now))
+            .SumAsync(q => q.LimitAmount, cancellationToken);
     }
 
     private async Task<Atm> LockAtmOfQuoteAsync(Guid quoteId, CancellationToken cancellationToken)

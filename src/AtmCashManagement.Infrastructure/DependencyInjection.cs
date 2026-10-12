@@ -26,6 +26,7 @@ public static class DependencyInjection
         services.AddScoped<IAppDbContext>(serviceProvider => serviceProvider.GetRequiredService<AppDbContext>());
         services.AddScoped<IUnitOfWork, EfUnitOfWork>();
         services.AddScoped<IAtmRepository, AtmRepository>();
+        services.AddScoped<ICardLock, PostgresCardLock>();
 
         services.AddSingleton<ICardNumberHasher>(serviceProvider =>
             new HmacCardNumberHasher(serviceProvider.GetRequiredService<IConfiguration>()[HmacCardNumberHasher.KeySetting]));

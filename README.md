@@ -7,7 +7,8 @@ cassette movement ledger and operational reporting.
 > **Status — in progress.** Done: ATM registration, cassette configuration, lifecycle, cash loading and
 > unloading, balances (A1–A7, A12, B1, B2), the movement ledger with its consistency check (B8) and
 > the fewest-notes selection algorithm with its acceptance tests (B3), and the two-step withdrawal
-> with reservations, expiry and idempotent confirmation (A9, A10, B4).
+> with reservations, expiry and idempotent confirmation (A9, A10, B4), daily limits and card number
+> protection (B5).
 > Sections marked 🚧 are completed as the remaining requirements are implemented.
 
 ## Contents
@@ -298,7 +299,15 @@ sits in two cassettes, the one with the higher fill ratio pays first (B2).
   The key is a development value in `docker-compose.yml`; a real deployment injects it from a secret
   store. An integration test reads the stored value and checks it is the keyed hash, not the number
   or its plain hash.
-- 🚧 Daily limit enforcement follows.
+- **Daily limit.** TRY 20,000, USD 1,000 and EUR 1,000 per card and business day, tracked separately
+  per currency and checked at the quote step. "Used today" is the sum of confirmed amounts plus open,
+  unexpired quotes (each counted with its largest offered amount, since the customer may still take
+  it). A request above the remaining limit is rejected with `422 DAILY_LIMIT_EXCEEDED`, reporting
+  `usedToday` and `remaining`; the upper alternative is only offered when it fits in the remaining
+  limit.
+- **Parallel requests for one card.** The ATM lock does not cover two ATMs, so the quote also takes a
+  transaction-scoped PostgreSQL advisory lock on the card hash. It is always taken after the ATM lock;
+  a fixed order means no deadlocks.
 ### 🚧 Reconciliation with four-eyes approval (B9)
 ### 🚧 Reporting, low-cash alerts and the outbox (B10)
 
@@ -332,6 +341,10 @@ sits in two cassettes, the one with the higher fill ratio pays first (B2).
     (e.g. `QUOTE_EXPIRED`) can be retried with the same key and is evaluated again.
 13. **Maintenance cancels quotes.** A customer cannot confirm a withdrawal at an ATM that has been
     taken out of service, so open quotes are cancelled and their notes released.
+14. **Business day** for the daily limit is the calendar day in Türkiye (UTC+3 all year); it is
+    defined in one place (`BusinessDay`).
+15. **Over-limit requests are rejected, not reduced.** The customer gets the remaining amount in the
+    error and can ask again; silently paying less was considered surprising for a customer.
 
 ## Unfinished items and known limitations
 
